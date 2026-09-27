@@ -35,13 +35,40 @@ function refFromText(value) {
   return { name: titleCase(text) };
 }
 
-function splitSections(value) {
+function parseSectionSpecs(value) {
   return String(value)
     .replace(/\.$/, "")
     .split(/\s*,\s*|\s+and\s+/i)
-    .map((part) => titleCase(part))
+    .map((part) => part.trim())
     .filter(Boolean)
-    .slice(0, 40);
+    .slice(0, 40)
+    .map((part) => {
+      let working = part;
+      let repeat = 1;
+      let bars = null;
+
+      const repeatMatch = working.match(/\s+(?:x|×)\s*(\d+)\s*$/i);
+      if (repeatMatch) {
+        repeat = Math.max(1, Math.min(16, Number(repeatMatch[1])));
+        working = working.slice(0, repeatMatch.index).trim();
+      }
+
+      const barsMatch = working.match(/\s+(\d+)\s+bars?\s*$/i);
+      if (barsMatch) {
+        bars = Math.max(1, Math.min(512, Number(barsMatch[1])));
+        working = working.slice(0, barsMatch.index).trim();
+      }
+
+      return {
+        name: titleCase(working),
+        repeat,
+        ...(bars == null ? {} : { bars })
+      };
+    });
+}
+
+function splitSections(value) {
+  return parseSectionSpecs(value).map((item) => item.name);
 }
 
 function newPlan(text, title, commands, confidence = 0.95, notes = []) {
@@ -57,16 +84,39 @@ function newPlan(text, title, commands, confidence = 0.95, notes = []) {
 
 function parseSongBuild(text) {
   const match = text.match(
-    /create\s+(?:a\s+)?(?:worship\s+|praise\s+|church\s+)?song\s+(?:called|named)\s+(.+?)\s+at\s+(\d+(?:\.\d+)?)\s*bpm\s+with\s+(.+)/i
+    /create\s+(?:a\s+)?(?:worship\s+|praise\s+|church\s+)?song\s+(?:called|named)\s+(.+?)\s+at\s+(\d+(?:\.\d+)?)\s*bpm(?:\s+(?:in|at)\s+(\d+)\s*\/\s*(\d+))?\s+with\s+(.+)/i
   );
   if (!match) return null;
 
   const song = titleCase(match[1]);
   const bpm = Number(match[2]);
-  const sections = splitSections(match[3]);
+  const meter = match[3] && match[4]
+    ? { numerator: Number(match[3]), denominator: Number(match[4]) }
+    : null;
+  const sections = parseSectionSpecs(match[5]);
   const commands = [command("set_tempo", { bpm })];
 
-  sections.forEach((name) => commands.push(command("create_scene", { name, index: -1 })));
+  if (meter) {
+    commands.push(command("set_meter", meter));
+  }
+
+  sections.forEach((section) => {
+    for (let index = 0; index < section.repeat; index += 1) {
+      const name =
+        section.repeat > 1 ? section.name + " " + (index + 1) : section.name;
+      commands.push(command("create_scene", { name, index: -1 }));
+    }
+  });
+
+  commands.push(
+    command("create_song", {
+      title: song,
+      bpm,
+      meter,
+      key: null,
+      sections
+    })
+  );
 
   return newPlan(
     text,
@@ -74,8 +124,27 @@ function parseSongBuild(text) {
     commands,
     0.99,
     [
-      "Song metadata name is kept in the plan title in v0.1.",
-      "Scenes are appended in the order requested."
+      "Builds the Ableton scenes and saves the song to the local Luma library.",
+      meter
+        ? "Tempo and time signature are stored with the reusable song."
+        : "No time signature was specified, so Luma will not change or store one."
+    ]
+  );
+}
+
+function parseLoadSong(text) {
+  const match = text.trim().match(/^(?:load|build|open|bring\s+in)\s+(?:the\s+)?song\s+(.+)$/i);
+  if (!match) return null;
+
+  const song = titleCase(match[1].replace(/\.$/, ""));
+  return newPlan(
+    text,
+    "Load " + song,
+    [command("load_song", { song: { name: song } })],
+    0.99,
+    [
+      "Loads the saved tempo, meter, and section order into the current Ableton Set.",
+      "Scenes are appended to the current Set."
     ]
   );
 }
@@ -131,9 +200,13 @@ function parseSimple(text) {
 
   match = input.match(/^create\s+track(?:\s+(?:called|named))?\s+(.+)$/i);
   if (match) {
-    return newPlan(text, "Create audio track", [
-      command("create_track", { kind: "audio", name: titleCase(match[1]), index: -1 })
-    ], 0.85, ["Unspecified track type defaults to audio."]);
+    return newPlan(
+      text,
+      "Create audio track",
+      [command("create_track", { kind: "audio", name: titleCase(match[1]), index: -1 })],
+      0.85,
+      ["Unspecified track type defaults to audio."]
+    );
   }
 
   match = input.match(/^rename\s+track\s+(.+?)\s+to\s+(.+)$/i);
@@ -207,7 +280,7 @@ function parseText(text) {
   }
   if (text.length > 4000) throw new Error("Command is too long");
 
-  const parsers = [parseSongBuild, parseChurchSession, parseSimple];
+  const parsers = [parseSongBuild, parseLoadSong, parseChurchSession, parseSimple];
   for (const parser of parsers) {
     const plan = parser(text.trim());
     if (plan) return plan;
@@ -220,6 +293,7 @@ function parseText(text) {
 
 module.exports = {
   parseText,
+  parseSectionSpecs,
   splitSections,
   refFromText,
   DEFAULT_CHURCH_TRACKS
