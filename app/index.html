@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Luma Live</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">L</span>
+        <div>
+          <strong>Luma Live</strong>
+          <span>Church Show Control</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-page="live">
+          <span>Live</span><small>Service status</small>
+        </button>
+        <button class="nav-item" data-page="songs">
+          <span>Songs</span><small>Reusable library</small>
+        </button>
+        <button class="nav-item" data-page="setlists">
+          <span>Setlists</span><small>Build services</small>
+        </button>
+        <button class="nav-item" data-page="settings">
+          <span>Settings</span><small>Local system</small>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-line">
+          <span class="dot ready"></span>
+          <div><strong>Local Mode</strong><small>Internet not required</small></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <span class="eyebrow" id="pageEyebrow">SERVICE</span>
+          <h1 id="pageTitle">Live</h1>
+        </div>
+        <div class="top-status">
+          <div class="connection-pill"><span class="dot" id="serverDot"></span><span id="serverStatus">Starting local server</span></div>
+        </div>
+      </header>
+
+      <div id="error" class="error" hidden></div>
+
+      <section class="page active" data-page-panel="live">
+        <div class="hero-grid">
+          <article class="panel hero-panel">
+            <div class="panel-heading">
+              <div><span class="eyebrow">CURRENT SERVICE</span><h2>No service loaded</h2></div>
+              <span class="badge">LOCAL</span>
+            </div>
+            <div class="hero-empty">
+              <strong>Your library now lives on this Mac.</strong>
+              <p>Build a setlist, then connect Ableton when you are ready. Song and service preparation works with no internet connection.</p>
+              <button class="primary" data-go="setlists">Build a Setlist</button>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <div><span class="eyebrow">ABLETON</span><h3>Bridge</h3></div>
+              <span class="connection-state waiting">NEXT</span>
+            </div>
+            <p class="muted">The existing Max for Live bridge remains separate in this pass. The desktop app is now the permanent library and LAN host.</p>
+          </article>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric"><span class="eyebrow">SONGS</span><strong id="liveSongCount">0</strong><small>saved locally</small></article>
+          <article class="metric"><span class="eyebrow">SETLISTS</span><strong id="liveSetlistCount">0</strong><small>saved services</small></article>
+          <article class="metric wide"><span class="eyebrow">REMOTE</span><strong id="liveRemoteUrl">Starting…</strong><small>Open this on an iPad on the same network</small></article>
+        </div>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div><span class="eyebrow">RECENT</span><h3>Setlists</h3></div>
+            <button class="quiet" data-go="setlists">Open Builder</button>
+          </div>
+          <div id="recentSetlists" class="rows"></div>
+        </article>
+      </section>
+
+      <section class="page" data-page-panel="songs">
+        <div class="split">
+          <article class="panel editor-panel">
+            <div class="panel-heading">
+              <div><span class="eyebrow">EDITOR</span><h2 id="songEditorTitle">New Song</h2></div>
+              <button id="newSong" class="quiet">New</button>
+            </div>
+
+            <div class="form-grid">
+              <label>Title<input id="songTitle" placeholder="Goodness of God"></label>
+              <label>Artist<input id="songArtist" placeholder="Bethel Music"></label>
+              <label>BPM<input id="songBpm" type="number" min="20" max="999" value="120"></label>
+              <label>Key<input id="songKey" placeholder="Ab"></label>
+              <label>Meter
+                <div class="meter-fields"><input id="songMeterNum" type="number" value="4" min="1" max="32"><span>/</span><input id="songMeterDen" type="number" value="4" min="1" max="16"></div>
+              </label>
+              <label>Length in bars<input id="songLength" type="number" min="1" value="64"></label>
+            </div>
+
+            <label>Sections
+              <textarea id="songSections" rows="10" placeholder="Intro @ 1&#10;Verse 1 @ 9&#10;Chorus @ 25&#10;Bridge @ 57&#10;Vamp @ 81"></textarea>
+            </label>
+            <p class="hint">One section per line using <code>Name @ bar</code>. These stay with the song every time you use it.</p>
+
+            <div class="actions">
+              <button id="deleteSong" class="danger-link" hidden>Delete</button>
+              <button id="saveSong" class="primary">Save Song</button>
+            </div>
+          </article>
+
+          <article class="panel list-panel">
+            <div class="panel-heading">
+              <div><span class="eyebrow">LIBRARY</span><h3>Saved Songs</h3></div>
+              <span id="songCount" class="counter">0</span>
+            </div>
+            <div id="songList" class="rows"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="page" data-page-panel="setlists">
+        <div class="split">
+          <article class="panel editor-panel">
+            <div class="panel-heading">
+              <div><span class="eyebrow">SERVICE BUILDER</span><h2 id="setlistEditorTitle">New Setlist</h2></div>
+              <button id="newSetlist" class="quiet">New</button>
+            </div>
+
+            <div class="form-grid compact">
+              <label>Service name<input id="setlistTitle" placeholder="Sunday AM"></label>
+              <label>Gap between songs<input id="setlistGap" type="number" min="0" max="64" value="4"></label>
+            </div>
+
+            <div class="add-row">
+              <select id="songPicker"></select>
+              <button id="addSong">Add Song</button>
+            </div>
+
+            <div id="setlistItems" class="setlist-stack"></div>
+
+            <div class="actions">
+              <button id="deleteSetlist" class="danger-link" hidden>Delete</button>
+              <button id="saveSetlist" class="primary">Save Setlist</button>
+            </div>
+          </article>
+
+          <article class="panel list-panel">
+            <div class="panel-heading">
+              <div><span class="eyebrow">SERVICES</span><h3>Saved Setlists</h3></div>
+              <span id="setlistCount" class="counter">0</span>
+            </div>
+            <div id="setlistList" class="rows"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="page" data-page-panel="settings">
+        <div class="settings-grid">
+          <article class="panel">
+            <span class="eyebrow">LOCAL DATABASE</span>
+            <h3>Offline Library</h3>
+            <p class="muted">Songs and setlists are stored in SQLite on this Mac. Closing Ableton or losing internet does not remove access to the library.</p>
+            <div class="detail"><span>Database</span><code id="databasePath">Loading…</code></div>
+          </article>
+
+          <article class="panel">
+            <span class="eyebrow">IPAD REMOTE</span>
+            <h3>Local Network</h3>
+            <p class="muted">Open the address below from a device connected to the same Wi-Fi or Ethernet network.</p>
+            <div id="remoteLinks" class="remote-links"></div>
+          </article>
+
+          <article class="panel">
+            <span class="eyebrow">INTERNET</span>
+            <h3>Optional</h3>
+            <p class="muted">Core show preparation is local-first. Internet access can later be used for updates, Planning Center, backups, or cloud sync, but it is not required to open Luma Live.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="./app.js"></script>
+</body>
+</html>
