@@ -83,8 +83,12 @@ fn main() {
                 .map_err(|e| format!("Could not create Luma Live data directory: {e}"))?;
 
             let db_path = app_dir.join("luma-live.db");
-            let db = Arc::new(Database::open(&db_path)?);
-            let token = Arc::new(load_or_create_token(&app_dir)?);
+            let db = Arc::new(
+                Database::open(&db_path).map_err(std::io::Error::other)?
+            );
+            let token = Arc::new(
+                load_or_create_token(&app_dir).map_err(std::io::Error::other)?
+            );
             let runtime = Arc::new(RwLock::new(RuntimeInfo {
                 server_running: false,
                 port: None,
