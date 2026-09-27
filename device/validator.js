@@ -121,6 +121,15 @@ function validateCommand(input, options = {}) {
       break;
     }
 
+    case "start_playback":
+    case "stop_playback":
+      normalized = {};
+      break;
+
+    case "set_metronome":
+      normalized = { enabled: bool(args.enabled, "set_metronome.enabled") };
+      break;
+
     case "fire_scene":
       normalized = { scene: target(args.scene, "fire_scene.scene") };
       break;
