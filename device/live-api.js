@@ -63,6 +63,77 @@ function sceneState() {
   return scenes;
 }
 
+function cuePointState() {
+  var points = [];
+  var total = count("cue_points");
+  for (var i = 0; i < total; i++) {
+    var cue = live("live_set cue_points " + i);
+    points.push({
+      index: i,
+      name: String(getProp(cue, "name") || ""),
+      time: Number(getProp(cue, "time"))
+    });
+  }
+  return points;
+}
+
+function findCuePointAt(time, tolerance) {
+  var points = cuePointState();
+  var limit = tolerance === undefined ? 0.001 : Number(tolerance);
+  for (var i = 0; i < points.length; i++) {
+    if (Math.abs(points[i].time - Number(time)) <= limit) return points[i];
+  }
+  return null;
+}
+
+function clearLumaCuePoints() {
+  var set = live("live_set");
+  var saved = Number(getProp(set, "current_song_time"));
+  var points = cuePointState().filter(function (point) {
+    return point.name.indexOf("LL|") === 0;
+  });
+
+  for (var i = points.length - 1; i >= 0; i--) {
+    set.set("current_song_time", points[i].time);
+    set.call("set_or_delete_cue");
+  }
+
+  set.set("current_song_time", saved);
+  return points.length;
+}
+
+function ensureLumaCuePoint(time, name) {
+  var set = live("live_set");
+  var saved = Number(getProp(set, "current_song_time"));
+  var existing = findCuePointAt(time, 0.001);
+
+  if (existing) {
+    if (existing.name.indexOf("LL|") === 0) {
+      setName("live_set cue_points " + existing.index, name);
+      return { created: false, renamed: true, skipped: false };
+    }
+    return {
+      created: false,
+      renamed: false,
+      skipped: true,
+      reason: "existing non-Luma locator at the same time"
+    };
+  }
+
+  set.set("current_song_time", Number(time));
+  set.call("set_or_delete_cue");
+
+  var created = findCuePointAt(time, 0.01);
+  if (!created) {
+    set.set("current_song_time", saved);
+    throw new Error("Ableton did not create the locator");
+  }
+
+  setName("live_set cue_points " + created.index, name);
+  set.set("current_song_time", saved);
+  return { created: true, renamed: false, skipped: false };
+}
+
 function trackState() {
   var tracks = [];
   var trackCount = count("tracks");
@@ -99,6 +170,7 @@ function snapshot() {
       denominator: Number(getProp(set, "signature_denominator"))
     },
     isPlaying: Number(getProp(set, "is_playing")) === 1,
+    currentSongTime: Number(getProp(set, "current_song_time")),
     activeSceneIndex: activeScene,
     scenes: sceneState(),
     tracks: tracks
@@ -237,6 +309,39 @@ function execute(command) {
     var soloTrack = targetIndex("tracks", args.track);
     live("live_set tracks " + soloTrack).set("solo", args.value ? 1 : 0);
     return { trackIndex: soloTrack, value: !!args.value };
+  }
+
+  if (type === "sync_cue_points") {
+    var removed = args.replace ? clearLumaCuePoints() : 0;
+    var createdCount = 0;
+    var renamedCount = 0;
+    var skipped = [];
+
+    for (var pointIndex = 0; pointIndex < args.points.length; pointIndex++) {
+      var point = args.points[pointIndex];
+      var cueResult = ensureLumaCuePoint(Number(point.time), String(point.name));
+      if (cueResult.created) createdCount += 1;
+      if (cueResult.renamed) renamedCount += 1;
+      if (cueResult.skipped) {
+        skipped.push({
+          time: Number(point.time),
+          name: String(point.name),
+          reason: cueResult.reason
+        });
+      }
+    }
+
+    return {
+      removed: removed,
+      created: createdCount,
+      renamed: renamedCount,
+      skipped: skipped
+    };
+  }
+
+  if (type === "jump_to_time") {
+    set.set("current_song_time", Number(args.time));
+    return { time: Number(args.time) };
   }
 
   throw new Error("unsupported command type: " + type);
