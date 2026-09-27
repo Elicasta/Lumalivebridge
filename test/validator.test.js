@@ -45,6 +45,43 @@ test("normalizes boolean track state", () => {
   });
 });
 
+test("validates reusable song metadata", () => {
+  assert.deepEqual(validateCommand({
+    type: "create_song",
+    args: {
+      title: "Gratitude",
+      bpm: 72,
+      meter: { numerator: 6, denominator: 8 },
+      sections: [
+        { name: "Intro" },
+        { name: "Bridge", repeat: 2, bars: 8 }
+      ]
+    }
+  }), {
+    type: "create_song",
+    args: {
+      title: "Gratitude",
+      bpm: 72,
+      meter: { numerator: 6, denominator: 8 },
+      key: null,
+      sections: [
+        { name: "Intro", repeat: 1 },
+        { name: "Bridge", repeat: 2, bars: 8 }
+      ]
+    }
+  });
+});
+
+test("validates song library targets", () => {
+  assert.deepEqual(validateCommand({
+    type: "load_song",
+    args: { song: { name: "Gratitude" } }
+  }), {
+    type: "load_song",
+    args: { song: { name: "Gratitude" } }
+  });
+});
+
 test("validates plans and caps empty plans", () => {
   assert.throws(() => validatePlan({ commands: [] }), /at least one command/i);
 });
