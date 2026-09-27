@@ -1,8 +1,8 @@
 {
   "name": "luma-live-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Local-first Ableton Live 12 command bridge for Max for Live",
+  "description": "Local-first Ableton Live 12 command bridge and reusable session organizer",
   "scripts": {
     "test": "node --test"
   },
