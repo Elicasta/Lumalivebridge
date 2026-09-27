@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111214">
+  <title>Luma Live Command</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">LUMA LIVE</div>
+        <h1>Command</h1>
+      </div>
+      <div id="status" class="status offline">OFFLINE</div>
+    </header>
+
+    <section class="card session-card">
+      <div class="session-row">
+        <div>
+          <span class="label">TEMPO</span>
+          <strong id="tempo">--</strong>
+        </div>
+        <div>
+          <span class="label">METER</span>
+          <strong id="meter">--</strong>
+        </div>
+        <div>
+          <span class="label">SCENE</span>
+          <strong id="activeScene">--</strong>
+        </div>
+      </div>
+      <button id="stopAll" class="danger">STOP ALL</button>
+    </section>
+
+    <section class="card command-card">
+      <label for="commandInput">Tell Ableton what to do</label>
+      <textarea id="commandInput" rows="4" placeholder="Create a song called Gratitude at 68 BPM with Intro, Verse, Chorus, Bridge, Build and Altar."></textarea>
+      <div class="actions">
+        <button id="clearBtn" class="ghost">Clear</button>
+        <button id="previewBtn" class="primary">Preview</button>
+      </div>
+      <div id="error" class="error" hidden></div>
+    </section>
+
+    <section id="planCard" class="card" hidden>
+      <div class="section-title">
+        <div>
+          <span class="label">PREVIEW</span>
+          <h2 id="planTitle">Command plan</h2>
+        </div>
+        <span id="confidence" class="pill"></span>
+      </div>
+      <div id="planList" class="plan-list"></div>
+      <div id="planNotes" class="notes"></div>
+      <div class="actions">
+        <button id="cancelBtn" class="ghost">Cancel</button>
+        <button id="applyBtn" class="primary">Apply to Ableton</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <div>
+          <span class="label">SESSION VIEW</span>
+          <h2>Scenes</h2>
+        </div>
+        <button id="refreshBtn" class="ghost small">Refresh</button>
+      </div>
+      <div id="sceneGrid" class="scene-grid"></div>
+    </section>
+
+    <section class="footer-note">
+      Commands are previewed before execution. Luma Live only sends allowlisted operations to Ableton.
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
