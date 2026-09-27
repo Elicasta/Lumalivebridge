@@ -1,10 +1,15 @@
 {
-  "name": "luma-live-bridge",
-  "version": "0.2.0",
+  "name": "luma-live",
+  "version": "0.3.0",
   "private": true,
-  "description": "Local-first Ableton Live 12 church show-control bridge with song library, setlists, and remote control",
+  "description": "Offline-first church live show-control app with local song library, setlists, LAN remote, and Ableton bridge",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
   },
   "engines": {
     "node": ">=18"
