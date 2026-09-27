@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#0b0c0e">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#090a0c">
   <title>Luma Live Remote</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/styles.css">
@@ -11,53 +11,160 @@
 <body>
   <main class="shell">
     <header class="topbar">
-      <div><span class="eyebrow">LUMA LIVE</span><h1>Remote</h1></div>
-      <span id="status" class="status offline">OFFLINE</span>
+      <div class="brand">
+        <span class="brand-mark">L</span>
+        <div><span class="eyebrow">LUMA LIVE</span><h1>Remote</h1></div>
+      </div>
+      <div class="status-stack">
+        <span id="status" class="status offline">MAC OFFLINE</span>
+        <span id="bridgeStatus" class="status bridge-offline">ABLETON OFFLINE</span>
+      </div>
     </header>
 
+    <section class="transport">
+      <button id="playBtn" class="transport-btn"><span>▶</span><b id="playLabel">PLAY</b></button>
+      <button id="stopBtn" class="transport-btn"><span>■</span><b>STOP</b></button>
+      <button id="clickBtn" class="transport-btn"><span class="click-dot"></span><b>CLICK</b></button>
+      <div class="readouts">
+        <div><span class="label">BPM</span><strong id="tempo">--</strong></div>
+        <div><span class="label">BAR</span><strong id="barReadout">--</strong></div>
+        <div><span class="label">METER</span><strong id="meter">--</strong></div>
+      </div>
+    </section>
+
     <nav class="tabs">
-      <button class="tab active" data-tab="live">Live</button>
+      <button class="tab active" data-tab="song">Song Control</button>
+      <button class="tab" data-tab="busk">Busk</button>
       <button class="tab" data-tab="setlists">Setlists</button>
-      <button class="tab" data-tab="songs">Songs</button>
+      <button class="tab" data-tab="library">Library</button>
     </nav>
 
     <div id="error" class="error" hidden></div>
+    <div id="notice" class="notice" hidden></div>
 
-    <section class="page active" data-page="live">
-      <article class="card hero">
-        <span class="eyebrow">LOCAL CONNECTION</span>
-        <h2>Mac Connected</h2>
-        <p>This remote is talking directly to Luma Live on the Mac. Internet access is not required.</p>
-      </article>
+    <section class="page active" data-page="song">
+      <div class="song-layout">
+        <section class="card song-card">
+          <div class="song-top">
+            <button id="previousSongBtn" class="song-step">
+              <span>PREVIOUS SONG</span><strong id="previousSongName">—</strong>
+            </button>
 
-      <article class="card">
-        <div class="section-title"><div><span class="eyebrow">SERVICE</span><h3>Setlists</h3></div><span id="liveSetlistCount" class="pill">0</span></div>
-        <div id="liveSetlists" class="rows"></div>
-      </article>
+            <div class="song-title">
+              <span class="eyebrow">CURRENT SONG</span>
+              <h2 id="currentSong">No service loaded</h2>
+              <p id="currentMeta">Load a setlist to begin.</p>
+            </div>
 
-      <article class="card bridge-card">
-        <span class="eyebrow">ABLETON CONTROL</span>
-        <h3>Bridge layer next</h3>
-        <p>The Mac app is now the permanent library and LAN host. Live transport and section control will attach here once the Ableton bridge is moved under the app.</p>
-      </article>
+            <button id="nextSongBtn" class="song-step next">
+              <span>NEXT SONG</span><strong id="nextSongName">—</strong>
+            </button>
+          </div>
+
+          <div class="progress"><div id="songProgress"></div></div>
+
+          <div class="now-next">
+            <article>
+              <span class="label">NOW</span>
+              <strong id="currentSection">—</strong>
+            </article>
+            <article>
+              <span class="label">NEXT</span>
+              <strong id="nextSection">—</strong>
+            </article>
+          </div>
+
+          <div class="section-arrows">
+            <button id="previousSectionBtn">← Previous Section</button>
+            <button id="nextSectionBtn" class="primary">Next Section →</button>
+          </div>
+
+          <div id="sectionGrid" class="section-grid"></div>
+          <p class="microcopy">Section jumps are immediate in this build. Quantized next-bar jumps are still pending Ableton runtime validation.</p>
+        </section>
+
+        <aside class="card service-card">
+          <div class="card-head">
+            <div><span class="eyebrow">SERVICE</span><h3 id="activeSetlistTitle">No setlist loaded</h3></div>
+            <span id="serviceCount" class="pill">0</span>
+          </div>
+          <div id="serviceOrder" class="service-order"></div>
+        </aside>
+      </div>
+
+      <section class="card mixer-card">
+        <div class="card-head">
+          <div><span class="eyebrow">TRACK CONTROL</span><h3>Arrangement Mixer</h3></div>
+          <span class="muted">Live track volume · mute · solo</span>
+        </div>
+        <div id="trackMixer" class="track-mixer"></div>
+      </section>
+
+      <section class="card command-card">
+        <div class="card-head">
+          <div><span class="eyebrow">PLAIN LANGUAGE</span><h3>Tell Luma Live what to do</h3></div>
+        </div>
+        <div class="command-row">
+          <input id="commandInput" autocomplete="off" placeholder="Next section, mute BGV, load Sunday AM, set tempo to 72…">
+          <button id="commandBtn" class="primary">Run</button>
+        </div>
+        <div class="command-examples">
+          <button data-command="next section">Next section</button>
+          <button data-command="next song">Next song</button>
+          <button data-command="click on">Click on</button>
+          <button data-command="mute guide">Mute Guide</button>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" data-page="busk">
+      <section class="card">
+        <div class="card-head">
+          <div><span class="eyebrow">SESSION VIEW</span><h2>Busk</h2></div>
+          <button id="stopAllBtn" class="danger">STOP ALL</button>
+        </div>
+        <p class="subcopy">Spontaneous pads, vamps, shout loops, altar moments, walk-in music, and other Session View tools stay here.</p>
+        <div id="sceneGrid" class="scene-grid"></div>
+      </section>
     </section>
 
     <section class="page" data-page="setlists">
-      <article class="card">
-        <div class="section-title"><div><span class="eyebrow">SERVICES</span><h3>Saved Setlists</h3></div><span id="setlistCount" class="pill">0</span></div>
-        <div id="setlistList" class="rows"></div>
-      </article>
+      <div class="two-col">
+        <section class="card">
+          <div class="card-head">
+            <div><span class="eyebrow">ACTIVE ARRANGEMENT</span><h3>Service Order</h3></div>
+            <span id="activeSongCount" class="pill">0</span>
+          </div>
+          <div id="activeArrangement" class="rows"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div><span class="eyebrow">SAVED SERVICES</span><h3>Load a Setlist</h3></div>
+            <span id="setlistCount" class="pill">0</span>
+          </div>
+          <div id="setlistList" class="rows"></div>
+        </section>
+      </div>
     </section>
 
-    <section class="page" data-page="songs">
-      <article class="card">
-        <div class="section-title"><div><span class="eyebrow">LIBRARY</span><h3>Songs</h3></div><span id="songCount" class="pill">0</span></div>
-        <div id="songList" class="rows"></div>
-      </article>
+    <section class="page" data-page="library">
+      <section class="card">
+        <div class="card-head">
+          <div><span class="eyebrow">LOCAL SQLITE LIBRARY</span><h2>Songs</h2></div>
+          <span id="songCount" class="pill">0</span>
+        </div>
+        <p class="subcopy">This is the same library used by the Mac app and Setlist builder. Max no longer owns a second song database.</p>
+        <div id="songList" class="library-grid"></div>
+      </section>
     </section>
 
-    <footer>Same-network remote · Local-first</footer>
+    <footer>
+      <span>MAC HOST · 7878</span>
+      <span>ABLETON ADAPTER · LOCALHOST 17878</span>
+    </footer>
   </main>
+
   <script src="/app.js"></script>
 </body>
 </html>
