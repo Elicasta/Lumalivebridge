@@ -7,62 +7,19 @@
   const token = incoming || localStorage.getItem("lumaBridgeToken") || "";
 
   const el = (id) => document.getElementById(id);
-  const ui = {
-    status: el("status"),
-    error: el("error"),
-    tempo: el("tempo"),
-    meter: el("meter"),
-    position: el("position"),
-    currentSong: el("currentSong"),
-    currentMeta: el("currentMeta"),
-    currentSection: el("currentSection"),
-    nextSection: el("nextSection"),
-    liveSectionButtons: el("liveSectionButtons"),
-    activeSetlistTitle: el("activeSetlistTitle"),
-    liveSetlist: el("liveSetlist"),
-    stopAll: el("stopAll"),
-    refreshBtn: el("refreshBtn"),
-
-    songEditorHeading: el("songEditorHeading"),
-    songTitle: el("songTitle"),
-    songArtist: el("songArtist"),
-    songBpm: el("songBpm"),
-    songKey: el("songKey"),
-    songMeterNum: el("songMeterNum"),
-    songMeterDen: el("songMeterDen"),
-    songLengthBars: el("songLengthBars"),
-    songSections: el("songSections"),
-    saveSongBtn: el("saveSongBtn"),
-    deleteSongBtn: el("deleteSongBtn"),
-    newSongBtn: el("newSongBtn"),
-    songList: el("songList"),
-    songCount: el("songCount"),
-
-    setlistEditorHeading: el("setlistEditorHeading"),
-    setlistTitle: el("setlistTitle"),
-    setlistGap: el("setlistGap"),
-    addSongSelect: el("addSongSelect"),
-    addSongBtn: el("addSongBtn"),
-    setlistItems: el("setlistItems"),
-    saveSetlistBtn: el("saveSetlistBtn"),
-    syncSetlistBtn: el("syncSetlistBtn"),
-    deleteSetlistBtn: el("deleteSetlistBtn"),
-    newSetlistBtn: el("newSetlistBtn"),
-    setlistList: el("setlistList"),
-    setlistCount: el("setlistCount"),
-
-    commandInput: el("commandInput"),
-    previewBtn: el("previewBtn"),
-    clearBtn: el("clearBtn"),
-    planCard: el("planCard"),
-    planTitle: el("planTitle"),
-    confidence: el("confidence"),
-    planList: el("planList"),
-    planNotes: el("planNotes"),
-    cancelBtn: el("cancelBtn"),
-    applyBtn: el("applyBtn"),
-    sceneGrid: el("sceneGrid")
-  };
+  const ui = Object.fromEntries([
+    "status","error","playBtn","playLabel","stopBtn","clickBtn","tempo","meter","barReadout",
+    "previousSongBtn","previousSongName","nextSongBtn","nextSongName","currentSong","currentMeta",
+    "songProgress","currentSection","nextSection","previousSectionBtn","nextSectionBtn",
+    "liveSectionButtons","activeSetlistTitle","refreshBtn","liveSetlist","activeSongCount",
+    "arrangementSetlist","savedSetlistCount","savedSetlistRemote","stopAll","sceneGrid","trackGrid",
+    "songEditorHeading","newSongBtn","songTitle","songArtist","songBpm","songKey","songMeterNum",
+    "songMeterDen","songLengthBars","songSections","deleteSongBtn","saveSongBtn","songCount","songList",
+    "setlistEditorHeading","newSetlistBtn","setlistTitle","setlistGap","addSongSelect","addSongBtn",
+    "setlistItems","deleteSetlistBtn","saveSetlistBtn","syncSetlistBtn","setlistCount","setlistList",
+    "commandInput","clearBtn","previewBtn","planCard","planTitle","confidence","planList","planNotes",
+    "cancelBtn","applyBtn"
+  ].map((id) => [id, el(id)]));
 
   const state = {
     live: null,
@@ -85,7 +42,9 @@
   }
 
   function uid() {
-    return (crypto && crypto.randomUUID) ? crypto.randomUUID() : "item-" + Date.now() + "-" + Math.random();
+    return crypto && crypto.randomUUID
+      ? crypto.randomUUID()
+      : "item-" + Date.now() + "-" + Math.random().toString(16).slice(2);
   }
 
   function showError(message) {
@@ -94,8 +53,18 @@
   }
 
   function setStatus(online) {
-    ui.status.textContent = online ? "CONNECTED" : "OFFLINE";
+    const text = ui.status.querySelector("span:last-child");
+    if (text) text.textContent = online ? "CONNECTED" : "OFFLINE";
     ui.status.className = "status " + (online ? "online" : "offline");
+  }
+
+  function activateTab(name) {
+    document.querySelectorAll(".tab").forEach((button) => {
+      button.classList.toggle("active", button.dataset.tab === name);
+    });
+    document.querySelectorAll(".page").forEach((page) => {
+      page.classList.toggle("active", page.dataset.page === name);
+    });
   }
 
   async function api(path, options = {}) {
@@ -113,16 +82,6 @@
     return data;
   }
 
-  function setLibrary(data) {
-    state.songs = Array.isArray(data.songs) ? data.songs : state.songs;
-    state.setlists = Array.isArray(data.setlists) ? data.setlists : state.setlists;
-    if ("activeSetlistId" in data) state.activeSetlistId = data.activeSetlistId;
-    if ("arrangement" in data) state.arrangement = data.arrangement;
-    renderSongs();
-    renderSetlists();
-    renderLive();
-  }
-
   function activeSetlist() {
     return state.setlists.find((item) => item.id === state.activeSetlistId) || null;
   }
@@ -133,68 +92,220 @@
     return state.arrangement.songs.find((song) => song.instanceId === ctx.instanceId) || null;
   }
 
-  function renderLive() {
-    const live = state.live;
-    const ctx = live && live.liveContext;
-    ui.tempo.textContent = live && Number.isFinite(live.tempo) ? Math.round(live.tempo * 10) / 10 : "--";
-    ui.meter.textContent = live && live.meter ? live.meter.numerator + "/" + live.meter.denominator : "--";
-    ui.position.textContent = live && Number.isFinite(live.currentSongTime)
-      ? "Beat " + (Math.round(live.currentSongTime * 10) / 10)
-      : "--";
+  function placementByInstance(instanceId) {
+    if (!state.arrangement || !instanceId) return null;
+    return state.arrangement.songs.find((song) => song.instanceId === instanceId) || null;
+  }
 
+  function currentSectionIndex(placement, ctx) {
+    if (!placement || !ctx || !ctx.sectionId) return -1;
+    return placement.sections.findIndex((section) => section.id === ctx.sectionId);
+  }
+
+  function setLibrary(data) {
+    if (Array.isArray(data.songs)) state.songs = data.songs;
+    if (Array.isArray(data.setlists)) state.setlists = data.setlists;
+    if ("activeSetlistId" in data) state.activeSetlistId = data.activeSetlistId;
+    if ("arrangement" in data) state.arrangement = data.arrangement;
+    renderPrep();
+    renderSetlistRemote();
+    renderLive();
+  }
+
+  function renderTransport() {
+    const live = state.live || {};
+    const ctx = live.liveContext;
+
+    ui.playBtn.classList.toggle("active", !!live.isPlaying);
+    ui.playLabel.textContent = live.isPlaying ? "PLAYING" : "PLAY";
+    ui.clickBtn.classList.toggle("active", !!live.metronome);
+    ui.tempo.textContent = Number.isFinite(live.tempo) ? Math.round(live.tempo * 10) / 10 : "--";
+    ui.meter.textContent = live.meter ? live.meter.numerator + "/" + live.meter.denominator : "--";
+    ui.barReadout.textContent = ctx && Number.isFinite(ctx.currentBar)
+      ? ctx.currentBar + "." + (ctx.beatInBar || 1)
+      : "--";
+  }
+
+  function renderLive() {
+    renderTransport();
+
+    const live = state.live || {};
+    const ctx = live.liveContext;
     const setlist = activeSetlist();
+    const placement = activeSongPlacement();
+
     ui.activeSetlistTitle.textContent = setlist ? setlist.title : "No setlist synced";
 
     if (!ctx) {
-      ui.currentSong.textContent = setlist ? "Waiting for song position" : "No active setlist";
-      ui.currentMeta.textContent = setlist ? "Move the Ableton playhead into a synced song." : "Sync a setlist to Ableton.";
-      ui.currentSection.textContent = "--";
-      ui.nextSection.textContent = "--";
+      ui.currentSong.textContent = setlist ? "Waiting for playhead" : "No active setlist";
+      ui.currentMeta.textContent = setlist
+        ? "Move the Ableton playhead into a song."
+        : "Build and sync a setlist in Prep.";
+      ui.currentSection.textContent = "—";
+      ui.nextSection.textContent = "—";
+      ui.previousSongName.textContent = "—";
+      ui.nextSongName.textContent = state.arrangement && state.arrangement.songs[0]
+        ? state.arrangement.songs[0].title
+        : "—";
+      ui.previousSongBtn.disabled = true;
+      ui.nextSongBtn.disabled = !(state.arrangement && state.arrangement.songs.length);
+      ui.songProgress.style.width = "0%";
       ui.liveSectionButtons.innerHTML = "";
+      ui.previousSectionBtn.disabled = true;
+      ui.nextSectionBtn.disabled = true;
     } else {
       ui.currentSong.textContent = ctx.songTitle;
-      const bits = [ctx.bpm + " BPM"];
-      if (ctx.key) bits.push(ctx.key);
-      if (ctx.meter) bits.push(ctx.meter.numerator + "/" + ctx.meter.denominator);
-      ui.currentMeta.textContent = bits.join(" · ");
+      ui.currentMeta.textContent = [
+        ctx.bpm ? ctx.bpm + " BPM" : null,
+        ctx.key || null,
+        ctx.meter ? ctx.meter.numerator + "/" + ctx.meter.denominator : null
+      ].filter(Boolean).join(" · ");
+
       ui.currentSection.textContent = ctx.sectionName || "COUNT / PRE-ROLL";
       ui.nextSection.textContent = ctx.nextSectionName || "END";
+      ui.previousSongName.textContent = ctx.previousSong ? ctx.previousSong.title : "—";
+      ui.nextSongName.textContent = ctx.nextSong ? ctx.nextSong.title : "—";
+      ui.previousSongBtn.disabled = !ctx.previousSong;
+      ui.nextSongBtn.disabled = !ctx.nextSong;
+      ui.songProgress.style.width = Math.round((ctx.progress || 0) * 1000) / 10 + "%";
 
-      const placement = activeSongPlacement();
       ui.liveSectionButtons.innerHTML = "";
       if (placement) {
-        placement.sections.forEach((section) => {
+        placement.sections.forEach((section, index) => {
           const button = document.createElement("button");
-          button.className = "section-jump" + (section.id === ctx.sectionId ? " active" : "");
-          button.textContent = section.name;
+          const active = section.id === ctx.sectionId;
+          button.className = "section-button" + (active ? " active" : "");
+          button.innerHTML =
+            '<span class="section-index">' + String(index + 1).padStart(2, "0") + '</span>' +
+            '<strong>' + escapeHtml(section.name) + '</strong>' +
+            '<small>Bar ' + section.localStartBar + '</small>';
           button.addEventListener("click", () => jumpTo(placement, section.id));
           ui.liveSectionButtons.appendChild(button);
         });
+
+        const sectionIndex = currentSectionIndex(placement, ctx);
+        ui.previousSectionBtn.disabled = sectionIndex <= 0;
+        ui.nextSectionBtn.disabled = sectionIndex < 0 || sectionIndex >= placement.sections.length - 1;
       }
     }
 
+    renderServiceStack();
+    renderSetlistRemote();
+    renderBusk();
+  }
+
+  function renderServiceStack() {
     ui.liveSetlist.innerHTML = "";
-    if (state.arrangement && state.arrangement.songs.length) {
-      state.arrangement.songs.forEach((song, index) => {
-        const row = document.createElement("button");
-        const current = ctx && ctx.instanceId === song.instanceId;
-        row.className = "live-song-row" + (current ? " active" : "");
-        row.innerHTML =
-          '<span class="index">' + String(index + 1).padStart(2, "0") + '</span>' +
-          '<span class="song-copy"><b>' + escapeHtml(song.title) + '</b><small>' +
-          escapeHtml(song.bpm + " BPM" + (song.key ? " · " + song.key : "")) +
-          '</small></span><span class="go">GO</span>';
-        row.addEventListener("click", () => jumpTo(song, null));
-        ui.liveSetlist.appendChild(row);
-      });
-    } else {
-      ui.liveSetlist.innerHTML = '<div class="empty">Build a setlist, then sync it to Ableton.</div>';
+    if (!state.arrangement || !state.arrangement.songs.length) {
+      ui.liveSetlist.innerHTML = '<div class="empty">No Arrangement setlist is active.</div>';
+      return;
     }
 
-    renderScenes();
+    const ctx = state.live && state.live.liveContext;
+    state.arrangement.songs.forEach((song, index) => {
+      const button = document.createElement("button");
+      const active = ctx && ctx.instanceId === song.instanceId;
+      button.className = "service-row" + (active ? " active" : "");
+      button.innerHTML =
+        '<span class="service-number">' + String(index + 1).padStart(2, "0") + '</span>' +
+        '<span class="service-copy"><strong>' + escapeHtml(song.title) + '</strong><small>' +
+        escapeHtml(song.bpm + " BPM" + (song.key ? " · " + song.key : "")) +
+        '</small></span>' +
+        '<span class="service-go">' + (active ? "NOW" : "GO") + '</span>';
+      button.addEventListener("click", () => jumpTo(song, null));
+      ui.liveSetlist.appendChild(button);
+    });
+  }
+
+  function renderSetlistRemote() {
+    const arrangementSongs = state.arrangement && state.arrangement.songs || [];
+    const ctx = state.live && state.live.liveContext;
+    ui.activeSongCount.textContent = String(arrangementSongs.length);
+    ui.savedSetlistCount.textContent = String(state.setlists.length);
+
+    ui.arrangementSetlist.innerHTML = "";
+    arrangementSongs.forEach((song, index) => {
+      const active = ctx && ctx.instanceId === song.instanceId;
+      const row = document.createElement("button");
+      row.className = "arrangement-song" + (active ? " active" : "");
+      row.innerHTML =
+        '<span class="arrangement-number">' + String(index + 1).padStart(2, "0") + '</span>' +
+        '<span><strong>' + escapeHtml(song.title) + '</strong><small>' +
+        escapeHtml(song.sections.length + " sections · " + song.bpm + " BPM" + (song.key ? " · " + song.key : "")) +
+        '</small></span><span class="arrangement-go">' + (active ? "NOW" : "GO") + '</span>';
+      row.addEventListener("click", () => jumpTo(song, null));
+      ui.arrangementSetlist.appendChild(row);
+    });
+
+    if (!arrangementSongs.length) {
+      ui.arrangementSetlist.innerHTML = '<div class="empty">Sync a saved setlist to build the Arrangement map.</div>';
+    }
+
+    ui.savedSetlistRemote.innerHTML = "";
+    state.setlists.forEach((setlist) => {
+      const active = setlist.id === state.activeSetlistId;
+      const row = document.createElement("div");
+      row.className = "saved-setlist-row" + (active ? " active" : "");
+      row.innerHTML =
+        '<span><strong>' + escapeHtml(setlist.title) + '</strong><small>' +
+        setlist.items.length + ' song' + (setlist.items.length === 1 ? "" : "s") +
+        (active ? " · ACTIVE" : "") + '</small></span>' +
+        '<button class="' + (active ? "quiet" : "primary-action compact") + '">' +
+        (active ? "Resync" : "Load") + '</button>';
+      row.querySelector("button").addEventListener("click", () => syncExistingSetlist(setlist.id));
+      ui.savedSetlistRemote.appendChild(row);
+    });
+
+    if (!state.setlists.length) {
+      ui.savedSetlistRemote.innerHTML = '<div class="empty">No saved services yet. Build one in Prep.</div>';
+    }
+  }
+
+  function renderBusk() {
+    const live = state.live || {};
+
+    ui.sceneGrid.innerHTML = "";
+    (live.scenes || []).forEach((scene) => {
+      const button = document.createElement("button");
+      const active = scene.index === live.activeSceneIndex;
+      button.className = "scene-button" + (active ? " active" : "");
+      button.innerHTML =
+        '<span class="scene-number">' + String(scene.number).padStart(2, "0") + '</span>' +
+        '<strong>' + escapeHtml(scene.name) + '</strong>';
+      button.addEventListener("click", () => direct({
+        type: "fire_scene",
+        args: { scene: { index: scene.index } }
+      }));
+      ui.sceneGrid.appendChild(button);
+    });
+
+    if (!(live.scenes || []).length) {
+      ui.sceneGrid.innerHTML = '<div class="empty">No Session View scenes found.</div>';
+    }
+
+    ui.trackGrid.innerHTML = "";
+    (live.tracks || []).forEach((track) => {
+      const row = document.createElement("div");
+      row.className = "track-row";
+      row.innerHTML =
+        '<span class="track-number">' + String(track.number).padStart(2, "0") + '</span>' +
+        '<strong class="track-name">' + escapeHtml(track.name) + '</strong>' +
+        '<button data-mute class="track-toggle' + (track.mute ? " active mute" : "") + '">M</button>' +
+        '<button data-solo class="track-toggle' + (track.solo ? " active solo" : "") + '">S</button>';
+      row.querySelector("[data-mute]").addEventListener("click", () => direct({
+        type: "set_track_mute",
+        args: { track: { index: track.index }, value: !track.mute }
+      }));
+      row.querySelector("[data-solo]").addEventListener("click", () => direct({
+        type: "set_track_solo",
+        args: { track: { index: track.index }, value: !track.solo }
+      }));
+      ui.trackGrid.appendChild(row);
+    });
   }
 
   async function jumpTo(song, sectionId) {
+    if (!song) return;
     showError("");
     try {
       const data = await api("/api/jump", {
@@ -211,6 +322,45 @@
       }
     } catch (error) {
       showError(error.message);
+    }
+  }
+
+  async function jumpAdjacentSong(direction) {
+    const ctx = state.live && state.live.liveContext;
+    if (!ctx) {
+      const first = state.arrangement && state.arrangement.songs[0];
+      if (first && direction > 0) return jumpTo(first, null);
+      return;
+    }
+    const ref = direction < 0 ? ctx.previousSong : ctx.nextSong;
+    const song = ref && placementByInstance(ref.instanceId);
+    if (song) await jumpTo(song, null);
+  }
+
+  async function jumpAdjacentSection(direction) {
+    const ctx = state.live && state.live.liveContext;
+    const placement = activeSongPlacement();
+    if (!ctx || !placement) return;
+    const index = currentSectionIndex(placement, ctx);
+    const target = placement.sections[index + direction];
+    if (target) await jumpTo(placement, target.id);
+  }
+
+  async function direct(command) {
+    showError("");
+    try {
+      const data = await api("/api/direct", {
+        method: "POST",
+        body: JSON.stringify({ command })
+      });
+      if (data.state) {
+        state.live = data.state;
+        renderLive();
+      }
+      return data;
+    } catch (error) {
+      showError(error.message);
+      throw error;
     }
   }
 
@@ -266,31 +416,8 @@
     ui.songLengthBars.value = song.lengthBars;
     ui.songSections.value = song.sections.map((section) => section.name + " @ " + section.startBar).join("\n");
     ui.deleteSongBtn.hidden = false;
-    activateTab("songs");
+    activateTab("prep");
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function renderSongs() {
-    ui.songCount.textContent = String(state.songs.length);
-    ui.songList.innerHTML = "";
-    ui.addSongSelect.innerHTML = state.songs.length
-      ? state.songs.map((song) => '<option value="' + escapeHtml(song.id) + '">' + escapeHtml(song.title) + '</option>').join("")
-      : '<option value="">No songs saved</option>';
-
-    state.songs.forEach((song) => {
-      const row = document.createElement("button");
-      row.className = "library-row";
-      row.innerHTML =
-        '<span><b>' + escapeHtml(song.title) + '</b><small>' +
-        escapeHtml([song.artist, song.bpm + " BPM", song.key].filter(Boolean).join(" · ")) +
-        '</small></span><span class="chev">›</span>';
-      row.addEventListener("click", () => editSong(song));
-      ui.songList.appendChild(row);
-    });
-
-    if (!state.songs.length) {
-      ui.songList.innerHTML = '<div class="empty">Save your first reusable song above.</div>';
-    }
   }
 
   function setlistFormValue() {
@@ -320,8 +447,44 @@
     ui.setlistGap.value = setlist.gapBars;
     ui.deleteSetlistBtn.hidden = false;
     renderSetlistItems();
-    activateTab("setlist");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    activateTab("prep");
+  }
+
+  function renderPrep() {
+    ui.songCount.textContent = String(state.songs.length);
+    ui.setlistCount.textContent = String(state.setlists.length);
+
+    ui.addSongSelect.innerHTML = state.songs.length
+      ? state.songs.map((song) => '<option value="' + escapeHtml(song.id) + '">' + escapeHtml(song.title) + '</option>').join("")
+      : '<option value="">No songs saved</option>';
+
+    ui.songList.innerHTML = "";
+    state.songs.forEach((song) => {
+      const row = document.createElement("button");
+      row.className = "library-row";
+      row.innerHTML =
+        '<span><strong>' + escapeHtml(song.title) + '</strong><small>' +
+        escapeHtml([song.artist, song.bpm + " BPM", song.key].filter(Boolean).join(" · ")) +
+        '</small></span><span class="chev">›</span>';
+      row.addEventListener("click", () => editSong(song));
+      ui.songList.appendChild(row);
+    });
+    if (!state.songs.length) ui.songList.innerHTML = '<div class="empty">No reusable songs saved yet.</div>';
+
+    ui.setlistList.innerHTML = "";
+    state.setlists.forEach((setlist) => {
+      const row = document.createElement("button");
+      row.className = "library-row" + (setlist.id === state.activeSetlistId ? " active" : "");
+      row.innerHTML =
+        '<span><strong>' + escapeHtml(setlist.title) + '</strong><small>' +
+        setlist.items.length + ' songs' + (setlist.id === state.activeSetlistId ? " · ACTIVE" : "") +
+        '</small></span><span class="chev">›</span>';
+      row.addEventListener("click", () => editSetlist(setlist));
+      ui.setlistList.appendChild(row);
+    });
+    if (!state.setlists.length) ui.setlistList.innerHTML = '<div class="empty">No saved services yet.</div>';
+
+    renderSetlistItems();
   }
 
   function renderSetlistItems() {
@@ -329,28 +492,28 @@
     state.draftItems.forEach((item, index) => {
       const song = state.songs.find((entry) => entry.id === item.songId);
       const row = document.createElement("div");
-      row.className = "setlist-row";
+      row.className = "setlist-item";
       row.innerHTML =
-        '<span class="drag-num">' + String(index + 1).padStart(2, "0") + '</span>' +
-        '<span class="song-copy"><b>' + escapeHtml(song ? song.title : item.songId) + '</b><small>' +
+        '<span class="drag-number">' + String(index + 1).padStart(2, "0") + '</span>' +
+        '<span class="setlist-copy"><strong>' + escapeHtml(song ? song.title : item.songId) + '</strong><small>' +
         escapeHtml(song ? song.bpm + " BPM" + (song.key ? " · " + song.key : "") : "Missing song") +
         '</small></span>' +
         '<div class="row-actions">' +
-        '<button data-action="up" title="Move up">↑</button>' +
-        '<button data-action="down" title="Move down">↓</button>' +
-        '<button data-action="remove" title="Remove">×</button></div>';
+        '<button data-up>↑</button><button data-down>↓</button><button data-remove>×</button></div>';
 
-      row.querySelector('[data-action="up"]').disabled = index === 0;
-      row.querySelector('[data-action="down"]').disabled = index === state.draftItems.length - 1;
-      row.querySelector('[data-action="up"]').addEventListener("click", () => {
+      const up = row.querySelector("[data-up]");
+      const down = row.querySelector("[data-down]");
+      up.disabled = index === 0;
+      down.disabled = index === state.draftItems.length - 1;
+      up.addEventListener("click", () => {
         [state.draftItems[index - 1], state.draftItems[index]] = [state.draftItems[index], state.draftItems[index - 1]];
         renderSetlistItems();
       });
-      row.querySelector('[data-action="down"]').addEventListener("click", () => {
+      down.addEventListener("click", () => {
         [state.draftItems[index + 1], state.draftItems[index]] = [state.draftItems[index], state.draftItems[index + 1]];
         renderSetlistItems();
       });
-      row.querySelector('[data-action="remove"]').addEventListener("click", () => {
+      row.querySelector("[data-remove]").addEventListener("click", () => {
         state.draftItems.splice(index, 1);
         renderSetlistItems();
       });
@@ -358,32 +521,12 @@
     });
 
     if (!state.draftItems.length) {
-      ui.setlistItems.innerHTML = '<div class="empty">Add songs in service order.</div>';
-    }
-  }
-
-  function renderSetlists() {
-    ui.setlistCount.textContent = String(state.setlists.length);
-    ui.setlistList.innerHTML = "";
-    state.setlists.forEach((setlist) => {
-      const row = document.createElement("button");
-      row.className = "library-row" + (setlist.id === state.activeSetlistId ? " active" : "");
-      row.innerHTML =
-        '<span><b>' + escapeHtml(setlist.title) + '</b><small>' +
-        setlist.items.length + ' songs' + (setlist.id === state.activeSetlistId ? " · SYNCED" : "") +
-        '</small></span><span class="chev">›</span>';
-      row.addEventListener("click", () => editSetlist(setlist));
-      ui.setlistList.appendChild(row);
-    });
-
-    if (!state.setlists.length) {
-      ui.setlistList.innerHTML = '<div class="empty">No saved services yet.</div>';
+      ui.setlistItems.innerHTML = '<div class="empty boxed">Add songs in service order.</div>';
     }
   }
 
   async function saveSong() {
     showError("");
-    ui.saveSongBtn.disabled = true;
     try {
       const data = await api("/api/songs", {
         method: "POST",
@@ -393,8 +536,6 @@
       editSong(data.song);
     } catch (error) {
       showError(error.message);
-    } finally {
-      ui.saveSongBtn.disabled = false;
     }
   }
 
@@ -409,20 +550,27 @@
     return data.setlist;
   }
 
-  async function syncSetlist() {
+  async function syncExistingSetlist(setlistId) {
     showError("");
+    try {
+      const data = await api("/api/setlists/" + encodeURIComponent(setlistId) + "/sync", {
+        method: "POST",
+        body: "{}"
+      });
+      if (data.state) state.live = data.state;
+      setLibrary(data);
+      activateTab("live");
+    } catch (error) {
+      showError(error.message);
+    }
+  }
+
+  async function syncDraftSetlist() {
     ui.syncSetlistBtn.disabled = true;
     ui.syncSetlistBtn.textContent = "Syncing…";
     try {
       const setlist = await saveSetlist();
-      const data = await api("/api/setlists/" + encodeURIComponent(setlist.id) + "/sync", {
-        method: "POST",
-        body: "{}"
-      });
-      setLibrary(data);
-      if (data.state) state.live = data.state;
-      renderLive();
-      activateTab("live");
+      await syncExistingSetlist(setlist.id);
     } catch (error) {
       showError(error.message);
     } finally {
@@ -437,12 +585,15 @@
     const labels = {
       set_tempo: () => "Set tempo to " + a.bpm + " BPM",
       set_meter: () => "Set meter to " + a.numerator + "/" + a.denominator,
+      start_playback: () => "Start Arrangement playback",
+      stop_playback: () => "Stop Arrangement playback",
+      set_metronome: () => (a.enabled ? "Turn click on" : "Turn click off"),
       create_track: () => "Create " + a.kind + " track · " + a.name,
       rename_track: () => "Rename track " + ref(a.track) + " → " + a.name,
       create_scene: () => "Create scene · " + a.name,
       rename_scene: () => "Rename scene " + ref(a.scene) + " → " + a.name,
       fire_scene: () => "Launch scene · " + ref(a.scene),
-      stop_all_clips: () => "Stop all clips",
+      stop_all_clips: () => "Stop all Session clips",
       create_midi_clip: () => "Create MIDI clip on " + ref(a.track) + " / " + ref(a.scene),
       duplicate_clip: () => "Duplicate clip on " + ref(a.track),
       set_clip_loop: () => (a.enabled ? "Enable" : "Disable") + " clip loop",
@@ -463,43 +614,13 @@
     plan.commands.forEach((command, index) => {
       const row = document.createElement("div");
       row.className = "plan-row";
-      row.innerHTML = '<span class="num">' + String(index + 1).padStart(2, "0") + '</span><span>' +
-        escapeHtml(labelCommand(command)) + "</span>";
+      row.innerHTML =
+        '<span class="plan-number">' + String(index + 1).padStart(2, "0") + '</span>' +
+        '<span>' + escapeHtml(labelCommand(command)) + '</span>';
       ui.planList.appendChild(row);
     });
     ui.planNotes.innerHTML = (plan.notes || []).map((note) => "<div>• " + escapeHtml(note) + "</div>").join("");
     ui.planCard.hidden = false;
-  }
-
-  function renderScenes() {
-    ui.sceneGrid.innerHTML = "";
-    const live = state.live;
-    (live && live.scenes || []).forEach((item) => {
-      const button = document.createElement("button");
-      button.className = "scene-button" + (item.index === live.activeSceneIndex ? " active" : "");
-      button.innerHTML = '<span class="scene-number">' + item.number + '</span><span>' + escapeHtml(item.name) + "</span>";
-      button.addEventListener("click", () => direct({
-        type: "fire_scene",
-        args: { scene: { index: item.index } }
-      }));
-      ui.sceneGrid.appendChild(button);
-    });
-  }
-
-  async function direct(command) {
-    showError("");
-    try {
-      const data = await api("/api/direct", {
-        method: "POST",
-        body: JSON.stringify({ command })
-      });
-      if (data.state) {
-        state.live = data.state;
-        renderLive();
-      }
-    } catch (error) {
-      showError(error.message);
-    }
   }
 
   async function refresh() {
@@ -510,33 +631,39 @@
       ]);
       state.live = liveData.state;
       setLibrary(libraryData);
-      renderLive();
       setStatus(true);
+      showError("");
     } catch (error) {
       setStatus(false);
       showError(error.message);
     }
   }
 
-  function activateTab(name) {
-    document.querySelectorAll(".tab").forEach((button) => {
-      button.classList.toggle("active", button.dataset.tab === name);
-    });
-    document.querySelectorAll(".page").forEach((page) => {
-      page.classList.toggle("active", page.dataset.page === name);
-    });
-  }
-
   document.querySelectorAll(".tab").forEach((button) => {
     button.addEventListener("click", () => activateTab(button.dataset.tab));
   });
 
-  ui.stopAll.addEventListener("click", () => direct({ type: "stop_all_clips", args: {} }));
+  ui.playBtn.addEventListener("click", () => {
+    const isPlaying = state.live && state.live.isPlaying;
+    direct({ type: isPlaying ? "stop_playback" : "start_playback", args: {} }).catch(() => {});
+  });
+  ui.stopBtn.addEventListener("click", () => direct({ type: "stop_playback", args: {} }).catch(() => {}));
+  ui.clickBtn.addEventListener("click", () => {
+    const enabled = !!(state.live && state.live.metronome);
+    direct({ type: "set_metronome", args: { enabled: !enabled } }).catch(() => {});
+  });
+
+  ui.previousSongBtn.addEventListener("click", () => jumpAdjacentSong(-1));
+  ui.nextSongBtn.addEventListener("click", () => jumpAdjacentSong(1));
+  ui.previousSectionBtn.addEventListener("click", () => jumpAdjacentSection(-1));
+  ui.nextSectionBtn.addEventListener("click", () => jumpAdjacentSection(1));
   ui.refreshBtn.addEventListener("click", refresh);
+  ui.stopAll.addEventListener("click", () => direct({ type: "stop_all_clips", args: {} }).catch(() => {}));
+
   ui.newSongBtn.addEventListener("click", resetSongEditor);
   ui.saveSongBtn.addEventListener("click", saveSong);
   ui.deleteSongBtn.addEventListener("click", async () => {
-    if (!state.editingSongId || !confirm("Delete this song from the library?")) return;
+    if (!state.editingSongId || !confirm("Delete this song from the bridge library?")) return;
     try {
       const data = await api("/api/songs/" + encodeURIComponent(state.editingSongId), { method: "DELETE" });
       resetSongEditor();
@@ -554,7 +681,7 @@
     renderSetlistItems();
   });
   ui.saveSetlistBtn.addEventListener("click", () => saveSetlist().catch((error) => showError(error.message)));
-  ui.syncSetlistBtn.addEventListener("click", syncSetlist);
+  ui.syncSetlistBtn.addEventListener("click", syncDraftSetlist);
   ui.deleteSetlistBtn.addEventListener("click", async () => {
     if (!state.editingSetlistId || !confirm("Delete this setlist?")) return;
     try {
@@ -584,7 +711,6 @@
 
   ui.applyBtn.addEventListener("click", async () => {
     if (!state.currentPlan) return;
-    showError("");
     ui.applyBtn.disabled = true;
     ui.applyBtn.textContent = "Applying…";
     try {
@@ -608,7 +734,6 @@
     state.currentPlan = null;
     ui.planCard.hidden = true;
   });
-
   ui.clearBtn.addEventListener("click", () => {
     ui.commandInput.value = "";
     showError("");
