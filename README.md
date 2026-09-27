@@ -73,11 +73,14 @@ chmod +x scripts/install-macos.sh
 ./scripts/install-macos.sh
 ```
 
-This copies the self-contained device source into:
+This creates a symlink from Ableton's User Library directly to the repo's `device/` folder:
 
 ```text
 ~/Music/Ableton/User Library/Presets/MIDI Effects/Max MIDI Effect/Luma Live Bridge/
+    -> <your clone>/device/
 ```
+
+That is intentional. A normal `git pull` updates the bridge source immediately without copying/reinstalling files.
 
 ### 3. Create the Max for Live device once
 
@@ -108,6 +111,16 @@ http://192.168.1.20:7878/?token=...
 Open that exact URL on your iPad or Mac browser.
 
 The bridge creates a persistent local token the first time it runs and reuses it on later launches, so an installed iPad PWA keeps working. Set `LUMA_BRIDGE_TOKEN` if you want to override it. API calls without the token are rejected.
+
+### Updating later
+
+From the repo:
+
+```bash
+./scripts/update-macos.sh
+```
+
+Because Ableton points at the checkout through a symlink, there is no second install step after a pull. Reload the Max for Live device if Max has not already picked up the changed source.
 
 ## Development
 
