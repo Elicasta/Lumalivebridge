@@ -1,8 +1,8 @@
 # Luma Live command language
 
-v0.1 deliberately prefers explicit commands over creative guessing.
+Luma prefers explicit, previewable operations over creative guessing.
 
-## Natural-language examples
+## Direct Ableton examples
 
 ```text
 set tempo to 72
@@ -20,21 +20,63 @@ solo track Click
 set track Pad volume to 45%
 ```
 
-## Song builder
+## Build and save a reusable song
 
 ```text
-Create a song called Gratitude at 68 BPM with Intro, Verse, Chorus, Bridge, Build and Altar
+Create a song called Gratitude at 72 BPM in 6/8 with Intro, Verse, Chorus, Bridge x2 and Outro
 ```
 
-This becomes one tempo change plus one appended scene for each section.
+That produces:
 
-## Church-session builder
+- `set_tempo 72`
+- `set_meter 6/8`
+- Intro scene
+- Verse scene
+- Chorus scene
+- Bridge 1 scene
+- Bridge 2 scene
+- Outro scene
+- local `create_song` organizer command
+
+The organizer command stores the reusable song at:
+
+```text
+~/Library/Application Support/LumaLiveBridge/library.json
+```
+
+### Section metadata
+
+Repeats:
+
+```text
+Bridge x3
+```
+
+Bars can also be recorded in the reusable song model:
+
+```text
+Intro 4 bars, Verse 8 bars, Bridge 8 bars x2
+```
+
+Bars are metadata in v0.2. Scene length/clip construction will use them in a later layer.
+
+## Load a saved song
+
+```text
+Load song Gratitude
+```
+
+The local `load_song` command reads the Song Library, then expands into validated Ableton commands for the saved tempo, meter, and section order.
+
+The expanded commands still pass through `validator.js`.
+
+## Church session builder
 
 ```text
 Create a church session at 72 BPM
 ```
 
-This creates the standard tracks:
+Creates the standard tracks:
 
 1. GUIDE
 2. CLICK
@@ -52,7 +94,7 @@ This creates the standard tracks:
 
 ## Structured API
 
-A trusted local client can call `POST /api/direct` with:
+A trusted local client can call `POST /api/direct`:
 
 ```json
 {
@@ -65,16 +107,16 @@ A trusted local client can call `POST /api/direct` with:
 }
 ```
 
-Every direct command still passes through `validator.js`.
+Every direct command passes through `validator.js`.
 
-There is no command for shell execution, arbitrary JavaScript, arbitrary Max messages, arbitrary LiveAPI paths, or file-system operations.
+There is no command for shell execution, arbitrary JavaScript, arbitrary Max messages, arbitrary LiveAPI paths, or arbitrary filesystem operations.
 
 ## Human numbering
 
-When text uses numeric references, Luma treats them as one-based:
+Numeric references are one-based in natural language:
 
 ```text
 launch scene 3
 ```
 
-maps to Live scene index `2`.
+maps to Ableton scene index `2`.
