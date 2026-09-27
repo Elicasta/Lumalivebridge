@@ -1,0 +1,24 @@
+name: desktop-check
+
+on:
+  push:
+    paths:
+      - "src-tauri/**"
+      - "app/**"
+      - "remote/**"
+      - ".github/workflows/desktop-check.yml"
+  pull_request:
+    paths:
+      - "src-tauri/**"
+      - "app/**"
+      - "remote/**"
+      - ".github/workflows/desktop-check.yml"
+
+jobs:
+  cargo-check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check desktop app
+        run: cargo check --manifest-path src-tauri/Cargo.toml
