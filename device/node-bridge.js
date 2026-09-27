@@ -436,7 +436,12 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/jump") {
       const body = await readJson(req);
-      const target = findJumpTarget(activeArrangement, String(body.songId || ""), body.sectionId ? String(body.sectionId) : null);
+      const target = findJumpTarget(
+        activeArrangement,
+        String(body.songId || ""),
+        body.sectionId ? String(body.sectionId) : null,
+        body.instanceId ? String(body.instanceId) : null
+      );
       await sendToMax({ type: "set_tempo", args: { bpm: target.song.bpm } });
       await sendToMax({
         type: "set_meter",
@@ -448,6 +453,7 @@ const server = http.createServer(async (req, res) => {
       await sendToMax({ type: "jump_to_time", args: { time: target.time } });
       await refreshState();
       writeAudit("arrangement_jump", {
+        instanceId: target.song.instanceId,
         songId: target.song.songId,
         sectionId: target.section ? target.section.id : null,
         time: target.time
