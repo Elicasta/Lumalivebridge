@@ -99,6 +99,7 @@ function locatePosition(arrangement, beat) {
   }
 
   return {
+    instanceId: song.instanceId,
     songId: song.songId,
     songTitle: song.title,
     songIndex: arrangement.songs.indexOf(song),
@@ -112,9 +113,11 @@ function locatePosition(arrangement, beat) {
   };
 }
 
-function findJumpTarget(arrangement, songId, sectionId) {
+function findJumpTarget(arrangement, songId, sectionId, instanceId) {
   if (!arrangement) throw new Error("No active arrangement");
-  const song = arrangement.songs.find((item) => item.songId === songId);
+  const song = arrangement.songs.find((item) =>
+    instanceId ? item.instanceId === instanceId : item.songId === songId
+  );
   if (!song) throw new Error("Song is not in the active setlist");
 
   if (!sectionId) {
