@@ -11,16 +11,31 @@ const { validateCommand, validatePlan } = require("./validator");
 
 const PORT = Number(process.env.LUMA_BRIDGE_PORT || 7878);
 const HOST = "0.0.0.0";
-const TOKEN = process.env.LUMA_BRIDGE_TOKEN || crypto.randomBytes(8).toString("hex");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const APP_DIR = path.join(os.homedir(), "Library", "Application Support", "LumaLiveBridge");
 const LOG_FILE = path.join(APP_DIR, "audit.jsonl");
+const TOKEN_FILE = path.join(APP_DIR, "token");
 const pending = new Map();
 const clients = new Set();
 
 let latestState = null;
 
 fs.mkdirSync(APP_DIR, { recursive: true });
+
+function loadOrCreateToken() {
+  if (process.env.LUMA_BRIDGE_TOKEN) return process.env.LUMA_BRIDGE_TOKEN;
+
+  try {
+    const saved = fs.readFileSync(TOKEN_FILE, "utf8").trim();
+    if (saved) return saved;
+  } catch (_) {}
+
+  const created = crypto.randomBytes(16).toString("hex");
+  fs.writeFileSync(TOKEN_FILE, created + "\n", { mode: 0o600 });
+  return created;
+}
+
+const TOKEN = loadOrCreateToken();
 
 function writeAudit(event, payload = {}) {
   const record = {
@@ -203,9 +218,11 @@ function mime(file) {
 function serveStatic(req, res, url) {
   let rel = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
   rel = rel.replace(/\\/g, "/");
-  const file = path.resolve(PUBLIC_DIR, "." + rel);
+  const root = path.resolve(PUBLIC_DIR);
+  const file = path.resolve(root, "." + rel);
+  const relative = path.relative(root, file);
 
-  if (!file.startsWith(path.resolve(PUBLIC_DIR))) {
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
     res.writeHead(403);
     return res.end("Forbidden");
   }
