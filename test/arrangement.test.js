@@ -79,3 +79,27 @@ test("finds an exact remote jump target within the active song namespace", () =>
   assert.equal(target.time, 176);
   assert.equal(target.song.bpm, 120);
 });
+
+
+test("exposes bar progress and adjacent songs for the remote", () => {
+  const arrangement = buildArrangement({
+    id: "sunday",
+    title: "Sunday",
+    gapBars: 4,
+    items: [
+      { id: "a", songId: "gratitude" },
+      { id: "b", songId: "hineh-ma-tov" }
+    ]
+  }, songs);
+
+  const current = locatePosition(arrangement, 40);
+  assert.equal(current.currentBar, 11);
+  assert.equal(current.beatInBar, 1);
+  assert.equal(current.previousSong, null);
+  assert.equal(current.nextSong.title, "Hineh Ma Tov");
+  assert.ok(current.progress > 0 && current.progress < 1);
+
+  const second = locatePosition(arrangement, arrangement.songs[1].startBeat);
+  assert.equal(second.previousSong.title, "Gratitude");
+  assert.equal(second.nextSong, null);
+});
