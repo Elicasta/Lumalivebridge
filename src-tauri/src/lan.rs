@@ -1,4 +1,7 @@
-use crate::models::{LibraryPayload, RuntimeInfo, Setlist, SetlistInput, Song, SongInput};
+use crate::arrangement::{build_arrangement, jump_target, locate_position, Arrangement};
+use crate::bridge;
+use crate::command;
+use crate::models::{RuntimeInfo, Setlist, SetlistInput, Song, SongInput};
 use crate::state::AppState;
 use axum::{
     extract::{Path, State as AxumState},
@@ -8,8 +11,8 @@ use axum::{
     Json, Router,
 };
 use if_addrs::get_if_addrs;
-use serde::Serialize;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 const REMOTE_INDEX: &str = include_str!("../../remote/index.html");
@@ -18,7 +21,7 @@ const REMOTE_CSS: &str = include_str!("../../remote/styles.css");
 const REMOTE_MANIFEST: &str = include_str!("../../remote/manifest.webmanifest");
 const REMOTE_SW: &str = include_str!("../../remote/sw.js");
 
-type ApiError = (StatusCode, Json<serde_json::Value>);
+type ApiError = (StatusCode, Json<Value>);
 
 fn api_error(status: StatusCode, message: impl ToString) -> ApiError {
     (status, Json(json!({ "ok": false, "error": message.to_string() })))
@@ -78,6 +81,7 @@ struct Health {
     product: &'static str,
     version: &'static str,
     offline_ready: bool,
+    bridge_port: u16,
 }
 
 async fn health() -> Json<Health> {
@@ -86,7 +90,66 @@ async fn health() -> Json<Health> {
         product: "luma-live",
         version: env!("CARGO_PKG_VERSION"),
         offline_ready: true,
+        bridge_port: 17878,
     })
+}
+
+fn active_arrangement(state: &AppState) -> Result<Option<Arrangement>, String> {
+    let Some(active_id) = state.db.get_active_setlist_id()? else {
+        return Ok(None);
+    };
+    let Some(setlist) = state.db.get_setlist(&active_id)? else {
+        return Ok(None);
+    };
+    let songs = state.db.list_songs()?;
+    build_arrangement(&setlist, &songs).map(Some)
+}
+
+fn library_value(state: &AppState, bridge_connected: bool) -> Result<Value, String> {
+    let library = state.db.library()?;
+    let active_setlist_id = state.db.get_active_setlist_id()?;
+    let arrangement = active_arrangement(state)?;
+    Ok(json!({
+        "ok": true,
+        "songs": library.songs,
+        "setlists": library.setlists,
+        "activeSetlistId": active_setlist_id,
+        "arrangement": arrangement,
+        "bridgeConnected": bridge_connected
+    }))
+}
+
+async fn enriched_live_state(state: &AppState) -> Result<Value, String> {
+    let raw = bridge::state().await;
+    let bridge_connected = raw.is_ok();
+    let mut live = match raw {
+        Ok(value) if value.is_object() => value,
+        Ok(_) => json!({}),
+        Err(_) => json!({}),
+    };
+
+    let arrangement = active_arrangement(state)?;
+    let current_song_time = live
+        .get("currentSongTime")
+        .and_then(Value::as_f64);
+    let live_context = match (&arrangement, current_song_time) {
+        (Some(arrangement), Some(beat)) => locate_position(arrangement, beat),
+        _ => None,
+    };
+
+    if let Some(object) = live.as_object_mut() {
+        object.insert("bridgeConnected".into(), json!(bridge_connected));
+        object.insert(
+            "activeSetlistId".into(),
+            json!(state.db.get_active_setlist_id()?),
+        );
+        object.insert(
+            "liveContext".into(),
+            serde_json::to_value(live_context).map_err(|e| e.to_string())?,
+        );
+    }
+
+    Ok(live)
 }
 
 async fn runtime(
@@ -105,12 +168,22 @@ async fn runtime(
 async fn library(
     AxumState(state): AxumState<AppState>,
     headers: HeaderMap,
-) -> Result<Json<LibraryPayload>, ApiError> {
+) -> Result<Json<Value>, ApiError> {
     authorize(&headers, &state)?;
-    state
-        .db
-        .library()
+    let connected = bridge::health().await;
+    library_value(&state, connected)
         .map(Json)
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))
+}
+
+async fn live_state(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    enriched_live_state(&state)
+        .await
+        .map(|state| Json(json!({ "ok": true, "state": state })))
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))
 }
 
@@ -131,7 +204,7 @@ async fn delete_song(
     AxumState(state): AxumState<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<Value>, ApiError> {
     authorize(&headers, &state)?;
     state
         .db
@@ -157,13 +230,158 @@ async fn delete_setlist(
     AxumState(state): AxumState<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<Value>, ApiError> {
     authorize(&headers, &state)?;
     state
         .db
         .delete_setlist(&id)
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DirectRequest {
+    command: Value,
+}
+
+async fn direct(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<DirectRequest>,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    bridge::command(input.command)
+        .await
+        .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
+    let live = enriched_live_state(&state)
+        .await
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(json!({ "ok": true, "state": live })))
+}
+
+async fn sync_setlist(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+
+    let setlist = state
+        .db
+        .get_setlist(&id)
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Setlist not found"))?;
+    let songs = state
+        .db
+        .list_songs()
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+    let arrangement = build_arrangement(&setlist, &songs)
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+
+    let points: Vec<Value> = arrangement
+        .markers
+        .iter()
+        .map(|point| json!({ "time": point.time, "name": point.name }))
+        .collect();
+
+    bridge::send(
+        "sync_cue_points",
+        json!({ "replace": true, "points": points }),
+    )
+    .await
+    .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
+
+    state
+        .db
+        .set_active_setlist_id(Some(&setlist.id))
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+
+    let live = enriched_live_state(&state)
+        .await
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+    let library = library_value(&state, true)
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+
+    Ok(Json(json!({
+        "ok": true,
+        "arrangement": arrangement,
+        "state": live,
+        "library": library
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JumpRequest {
+    song_id: Option<String>,
+    instance_id: Option<String>,
+    section_id: Option<String>,
+}
+
+async fn jump(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<JumpRequest>,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    let arrangement = active_arrangement(&state)
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?
+        .ok_or_else(|| api_error(StatusCode::BAD_REQUEST, "No active setlist"))?;
+
+    let (time, song) = jump_target(
+        &arrangement,
+        input.song_id.as_deref(),
+        input.instance_id.as_deref(),
+        input.section_id.as_deref(),
+    )
+    .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+
+    bridge::send("set_tempo", json!({ "bpm": song.bpm }))
+        .await
+        .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
+    bridge::send(
+        "set_meter",
+        json!({
+            "numerator": song.meter.numerator,
+            "denominator": song.meter.denominator
+        }),
+    )
+    .await
+    .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
+    bridge::send("jump_to_time", json!({ "time": time }))
+        .await
+        .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
+
+    let live = enriched_live_state(&state)
+        .await
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(json!({ "ok": true, "state": live })))
+}
+
+#[derive(Debug, Deserialize)]
+struct PlainCommand {
+    text: String,
+}
+
+async fn plain_command(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<PlainCommand>,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    let result = command::execute(&state, &input.text)
+        .await
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+    let live = enriched_live_state(&state).await.unwrap_or_else(|_| json!({ "bridgeConnected": false }));
+    let library = library_value(&state, bridge::health().await)
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(json!({
+        "ok": true,
+        "result": result,
+        "state": live,
+        "library": library
+    })))
 }
 
 fn lan_urls(port: u16, token: &str) -> Vec<String> {
@@ -186,21 +404,9 @@ fn lan_urls(port: u16, token: &str) -> Vec<String> {
 }
 
 pub async fn run_server(state: AppState) -> anyhow::Result<()> {
-    let mut bound = None;
-
-    for port in 7878u16..7898u16 {
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
-        match tokio::net::TcpListener::bind(addr).await {
-            Ok(listener) => {
-                bound = Some((port, listener));
-                break;
-            }
-            Err(_) => continue,
-        }
-    }
-
-    let (port, listener) =
-        bound.ok_or_else(|| anyhow::anyhow!("No free Luma Live LAN port between 7878 and 7897"))?;
+    let port = 7878u16;
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
+    let listener = tokio::net::TcpListener::bind(addr).await?;
 
     {
         let mut runtime = state
@@ -221,10 +427,15 @@ pub async fn run_server(state: AppState) -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/api/runtime", get(runtime))
         .route("/api/library", get(library))
+        .route("/api/state", get(live_state))
+        .route("/api/direct", post(direct))
+        .route("/api/command", post(plain_command))
+        .route("/api/jump", post(jump))
         .route("/api/songs", post(save_song))
         .route("/api/songs/:id", delete(delete_song))
         .route("/api/setlists", post(save_setlist))
         .route("/api/setlists/:id", delete(delete_setlist))
+        .route("/api/setlists/:id/sync", post(sync_setlist))
         .with_state(state);
 
     axum::serve(listener, app).await?;
