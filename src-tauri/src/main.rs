@@ -106,6 +106,14 @@ fn main() {
     install_panic_logger();
     append_diagnostic("Luma Live starting");
 
+    let mut context = tauri::generate_context!();
+
+    // macOS does not use per-window icons. Tauri's generated default window
+    // icon can be rejected by Tao before the first window appears, so leave
+    // the Dock icon to the macOS bundle and disable the runtime window icon.
+    #[cfg(target_os = "macos")]
+    context.set_default_window_icon(None);
+
     let result = tauri::Builder::default()
         .setup(|app| {
             let mut startup_warning = None;
@@ -168,7 +176,7 @@ fn main() {
             delete_setlist,
             get_runtime_info
         ])
-        .run(tauri::generate_context!());
+        .run(context);
 
     if let Err(error) = result {
         append_diagnostic(&format!("tauri run error: {error}"));
