@@ -145,6 +145,7 @@ function trackState() {
       name: String(getProp(track, "name") || "Track " + (i + 1)),
       mute: Number(getProp(track, "mute")) === 1,
       solo: Number(getProp(track, "solo")) === 1,
+      volume: Number(getProp(live("live_set tracks " + i + " mixer_device volume"), "value")),
       playingSlotIndex: Number(getProp(track, "playing_slot_index"))
     });
   }
@@ -170,6 +171,7 @@ function snapshot() {
       denominator: Number(getProp(set, "signature_denominator"))
     },
     isPlaying: Number(getProp(set, "is_playing")) === 1,
+    metronome: Number(getProp(set, "metronome")) === 1,
     currentSongTime: Number(getProp(set, "current_song_time")),
     activeSceneIndex: activeScene,
     scenes: sceneState(),
@@ -248,6 +250,21 @@ function execute(command) {
       numerator: Number(args.numerator),
       denominator: Number(args.denominator)
     };
+  }
+
+  if (type === "start_playback") {
+    set.call("start_playing");
+    return {};
+  }
+
+  if (type === "stop_playback") {
+    set.call("stop_playing");
+    return {};
+  }
+
+  if (type === "set_metronome") {
+    set.set("metronome", args.enabled ? 1 : 0);
+    return { enabled: !!args.enabled };
   }
 
   if (type === "fire_scene") {
