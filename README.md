@@ -107,7 +107,7 @@ http://192.168.1.20:7878/?token=...
 
 Open that exact URL on your iPad or Mac browser.
 
-The token changes each launch unless you set `LUMA_BRIDGE_TOKEN`. API calls without the token are rejected.
+The bridge creates a persistent local token the first time it runs and reuses it on later launches, so an installed iPad PWA keeps working. Set `LUMA_BRIDGE_TOKEN` if you want to override it. API calls without the token are rejected.
 
 ## Development
 
