@@ -249,6 +249,7 @@
     if (!runtime) return;
 
     $("databasePath").textContent = runtime.databasePath || "Unavailable";
+    if (runtime.startupWarning) showError(runtime.startupWarning);
     $("serverDot").className = "dot " + (runtime.serverRunning ? "ready" : "waiting");
     $("serverStatus").textContent = runtime.serverRunning ? "LAN remote ready" : "Starting local server";
 
