@@ -2,20 +2,63 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseText, splitSections, refFromText } = require("../device/parser");
+const {
+  parseText,
+  parseSectionSpecs,
+  splitSections,
+  refFromText
+} = require("../device/parser");
 
-test("parses a worship song build", () => {
+test("builds and saves a reusable song with meter", () => {
   const plan = parseText(
-    "Create a song called Gratitude at 68 BPM with Intro, Verse, Chorus, Bridge, Build and Altar"
+    "Create a song called Gratitude at 72 BPM in 6/8 with Intro, Verse, Chorus, Bridge x2 and Outro"
   );
 
   assert.equal(plan.title, "Build Gratitude");
   assert.equal(plan.commands[0].type, "set_tempo");
-  assert.equal(plan.commands[0].args.bpm, 68);
+  assert.equal(plan.commands[0].args.bpm, 72);
+  assert.deepEqual(plan.commands[1], {
+    type: "set_meter",
+    args: { numerator: 6, denominator: 8 }
+  });
+
   assert.deepEqual(
-    plan.commands.slice(1).map((item) => item.args.name),
-    ["Intro", "Verse", "Chorus", "Bridge", "Build", "Altar"]
+    plan.commands
+      .filter((item) => item.type === "create_scene")
+      .map((item) => item.args.name),
+    ["Intro", "Verse", "Chorus", "Bridge 1", "Bridge 2", "Outro"]
   );
+
+  const save = plan.commands.at(-1);
+  assert.equal(save.type, "create_song");
+  assert.equal(save.args.title, "Gratitude");
+  assert.equal(save.args.bpm, 72);
+  assert.deepEqual(save.args.meter, { numerator: 6, denominator: 8 });
+  assert.deepEqual(save.args.sections[3], {
+    name: "Bridge",
+    repeat: 2
+  });
+});
+
+test("still parses a song build when meter is omitted", () => {
+  const plan = parseText(
+    "Create a song called Gratitude at 68 BPM with Intro, Verse, Chorus, Bridge, Build and Altar"
+  );
+
+  assert.equal(plan.commands[0].type, "set_tempo");
+  assert.equal(plan.commands.some((item) => item.type === "set_meter"), false);
+  assert.equal(plan.commands.at(-1).type, "create_song");
+  assert.equal(plan.commands.at(-1).args.meter, null);
+});
+
+test("parses a reusable song load", () => {
+  const plan = parseText("Load song Gratitude");
+  assert.deepEqual(plan.commands, [
+    {
+      type: "load_song",
+      args: { song: { name: "Gratitude" } }
+    }
+  ]);
 });
 
 test("parses a church session", () => {
@@ -43,6 +86,13 @@ test("splits section lists", () => {
     "Verse",
     "Chorus",
     "Altar"
+  ]);
+});
+
+test("parses section repeat and bar metadata", () => {
+  assert.deepEqual(parseSectionSpecs("intro 4 bars, bridge 8 bars x3"), [
+    { name: "Intro", repeat: 1, bars: 4 },
+    { name: "Bridge", repeat: 3, bars: 8 }
   ]);
 });
 
