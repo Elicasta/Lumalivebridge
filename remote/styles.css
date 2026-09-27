@@ -1,0 +1,43 @@
+* { box-sizing: border-box; }
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  background: #0b0c0e;
+  color: #f4f4f4;
+}
+body { margin: 0; min-height: 100vh; background: #0b0c0e; }
+button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
+.shell { width: min(760px,100%); margin: 0 auto; padding: max(22px,env(safe-area-inset-top)) 16px max(34px,env(safe-area-inset-bottom)); }
+.topbar,.section-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.topbar { margin-bottom: 14px; }
+h1,h2,h3,p { margin: 0; }
+h1 { font-size: 34px; letter-spacing: -.05em; margin-top: 2px; }
+h2 { font-size: 28px; letter-spacing: -.04em; margin-top: 5px; }
+h3 { font-size: 19px; letter-spacing: -.025em; margin-top: 4px; }
+.eyebrow { color: #7d838c; font-size: 10px; font-weight: 800; letter-spacing: .15em; }
+.status,.pill {
+  border: 1px solid #34383e; border-radius: 999px; padding: 8px 10px;
+  font-size: 10px; font-weight: 800; letter-spacing: .08em;
+}
+.status.online { color: #c8ffd8; border-color: #2d5b3b; background: #173020; }
+.status.offline { color: #ffb9b9; border-color: #603838; background: #311c1c; }
+.tabs {
+  display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; padding: 5px;
+  border: 1px solid #26292d; background: #101113; border-radius: 14px; margin-bottom: 13px;
+  position: sticky; top: max(6px,env(safe-area-inset-top)); z-index: 3;
+}
+.tab { border: 0; background: transparent; padding: 10px 7px; border-radius: 9px; font-weight: 700; }
+.tab.active { background: #272a2f; }
+.page { display: none; }
+.page.active { display: block; }
+.card { border: 1px solid #2a2d31; border-radius: 17px; background: #15171a; padding: 17px; margin-bottom: 12px; }
+.hero { padding: 22px 18px; }
+.hero p,.bridge-card p { color: #92979f; line-height: 1.55; margin-top: 9px; font-size: 13px; }
+.rows { display: grid; gap: 7px; margin-top: 13px; }
+.row { min-height: 58px; padding: 11px 12px; border: 1px solid #2d3035; border-radius: 12px; background: #191b1f; display: flex; align-items: center; }
+.row span { display: grid; gap: 3px; }
+.row b { font-size: 14px; }
+.row small { color: #7d838c; font-size: 11px; }
+.empty { color: #777d85; padding: 17px 2px; font-size: 12px; }
+.error { margin-bottom: 12px; border: 1px solid #683138; background: #34191d; color: #ffc1c5; padding: 11px 12px; border-radius: 12px; font-size: 12px; }
+footer { color: #666c74; font-size: 10px; text-align: center; padding: 12px 0; }
