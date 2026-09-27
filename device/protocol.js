@@ -15,7 +15,9 @@ const COMMAND_TYPES = Object.freeze([
   "set_clip_loop",
   "set_track_volume",
   "set_track_mute",
-  "set_track_solo"
+  "set_track_solo",
+  "sync_cue_points",
+  "jump_to_time"
 ]);
 
 const USER_COMMAND_TYPES = Object.freeze(
