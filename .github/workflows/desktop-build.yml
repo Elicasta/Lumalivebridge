@@ -1,0 +1,35 @@
+name: desktop-build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/tauri-offline-app
+    paths:
+      - "src-tauri/**"
+      - "app/**"
+      - "remote/**"
+      - "package.json"
+      - ".github/workflows/desktop-build.yml"
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Tauri CLI
+        run: npm install
+      - name: Build Luma Live
+        run: npm run desktop:build
+      - name: Upload macOS bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: Luma-Live-macOS
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app
+          if-no-files-found: error
