@@ -1,8 +1,8 @@
 {
-  "name": "Luma Live Command",
+  "name": "Luma Live Church",
   "short_name": "Luma Live",
   "display": "standalone",
   "start_url": "/",
   "background_color": "#0b0c0e",
-  "theme_color": "#111214"
+  "theme_color": "#0b0c0e"
 }
