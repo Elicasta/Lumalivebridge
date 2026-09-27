@@ -189,6 +189,30 @@ function validateCommand(input, options = {}) {
       };
       break;
 
+    case "sync_cue_points": {
+      if (!Array.isArray(args.points)) throw new Error("sync_cue_points.points must be an array");
+      if (args.points.length > 250) throw new Error("sync_cue_points.points is too large");
+      normalized = {
+        replace: args.replace == null ? true : bool(args.replace, "sync_cue_points.replace"),
+        points: args.points.map((point, index) => {
+          if (!isObject(point)) throw new Error("cue point " + index + " must be an object");
+          const time = finiteNumber(point.time, "cue point time");
+          if (time < 0 || time > 10000000) throw new Error("cue point time is out of range");
+          const name = cleanName(point.name, "cue point name");
+          if (!name.startsWith("LL|")) throw new Error("Luma cue point names must begin with LL|");
+          return { time, name };
+        })
+      };
+      break;
+    }
+
+    case "jump_to_time": {
+      const time = finiteNumber(args.time, "jump_to_time.time");
+      if (time < 0 || time > 10000000) throw new Error("jump time is out of range");
+      normalized = { time };
+      break;
+    }
+
     default:
       throw new Error("unsupported command");
   }
