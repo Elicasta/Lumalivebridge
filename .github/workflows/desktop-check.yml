@@ -1,5 +1,4 @@
 name: desktop-check
-
 on:
   push:
     paths:
@@ -13,6 +12,11 @@ on:
       - "app/**"
       - "remote/**"
       - ".github/workflows/desktop-check.yml"
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   cargo-check:
