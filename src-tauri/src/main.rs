@@ -1,3 +1,6 @@
+mod arrangement;
+mod bridge;
+mod command;
 mod db;
 mod lan;
 mod models;
