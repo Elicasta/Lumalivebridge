@@ -38,7 +38,8 @@
 
     <section class="card command-card">
       <label for="commandInput">Tell Ableton what to do</label>
-      <textarea id="commandInput" rows="4" placeholder="Create a song called Gratitude at 68 BPM with Intro, Verse, Chorus, Bridge, Build and Altar."></textarea>
+      <textarea id="commandInput" rows="4" placeholder="Create a song called Gratitude at 72 BPM in 6/8 with Intro, Verse, Chorus, Bridge x2 and Outro."></textarea>
+      <div class="command-hint">⌘ Enter previews the command.</div>
       <div class="actions">
         <button id="clearBtn" class="ghost">Clear</button>
         <button id="previewBtn" class="primary">Preview</button>
@@ -65,6 +66,19 @@
     <section class="card">
       <div class="section-title">
         <div>
+          <span class="label">SONG LIBRARY</span>
+          <h2>Reusable songs</h2>
+        </div>
+      </div>
+      <div id="libraryEmpty" class="empty-state">
+        Build your first song with plain language and it will appear here.
+      </div>
+      <div id="libraryList" class="library-list"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <div>
           <span class="label">SESSION VIEW</span>
           <h2>Scenes</h2>
         </div>
@@ -74,7 +88,7 @@
     </section>
 
     <section class="footer-note">
-      Commands are previewed before execution. Luma Live only sends allowlisted operations to Ableton.
+      Commands are previewed before execution. Song metadata stays on this Mac. Luma Live only sends allowlisted operations to Ableton.
     </section>
   </main>
 
