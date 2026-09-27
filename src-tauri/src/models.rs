@@ -107,4 +107,5 @@ pub struct RuntimeInfo {
     pub local_urls: Vec<String>,
     pub database_path: String,
     pub offline_ready: bool,
+    pub startup_warning: Option<String>,
 }
