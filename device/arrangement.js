@@ -98,14 +98,37 @@ function locatePosition(arrangement, beat) {
     }
   }
 
+  const songIndex = arrangement.songs.indexOf(song);
+  const beatsPerBar = Number(song.meter && song.meter.numerator || 4);
+  const localBeat = Math.max(0, time - song.startBeat);
+  const currentBar = Math.floor(localBeat / beatsPerBar) + 1;
+  const beatInBar = Math.floor(localBeat % beatsPerBar) + 1;
+  const duration = Math.max(1, song.endBeat - song.startBeat);
+  const progress = Math.max(0, Math.min(1, (time - song.startBeat) / duration));
+  const previousSong = songIndex > 0 ? arrangement.songs[songIndex - 1] : null;
+  const nextSong = songIndex < arrangement.songs.length - 1 ? arrangement.songs[songIndex + 1] : null;
+
   return {
     instanceId: song.instanceId,
     songId: song.songId,
     songTitle: song.title,
-    songIndex: arrangement.songs.indexOf(song),
+    songIndex,
     bpm: song.bpm,
     key: song.key,
     meter: song.meter,
+    currentBar,
+    beatInBar,
+    progress,
+    previousSong: previousSong ? {
+      instanceId: previousSong.instanceId,
+      songId: previousSong.songId,
+      title: previousSong.title
+    } : null,
+    nextSong: nextSong ? {
+      instanceId: nextSong.instanceId,
+      songId: nextSong.songId,
+      title: nextSong.title
+    } : null,
     sectionId: section ? section.id : null,
     sectionName: section ? section.name : null,
     nextSectionId: nextSection ? nextSection.id : null,
