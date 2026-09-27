@@ -1,5 +1,4 @@
 name: desktop-build
-
 on:
   workflow_dispatch:
   push:
@@ -11,6 +10,11 @@ on:
       - "remote/**"
       - "package.json"
       - ".github/workflows/desktop-build.yml"
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-macos:
