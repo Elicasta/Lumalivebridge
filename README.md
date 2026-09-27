@@ -1,23 +1,104 @@
 # Luma Live Bridge
 
-Luma Live Bridge is a local-first control layer for Ableton Live 12.
+Luma Live Bridge is a local-first Ableton Live 12 command layer and reusable session organizer.
 
-It gives you a browser/iPad command surface that can turn plain-English requests into a reviewed command plan, then apply approved changes to Ableton through Max for Live and LiveAPI.
+It gives you a Mac/iPad command surface where you can describe a session in plain English, preview the exact structured operations, then apply the approved plan to Ableton through Max for Live and LiveAPI.
 
-## v0.1 goals
+## v0.2
 
-- Text command box with Preview -> Apply
-- Local LAN remote for iPad/iPhone
-- No cloud account and no external npm dependencies
-- Allowlisted Ableton commands only
-- Audit log
-- Session state readback
-- Scene launch and emergency Stop All
-- Safe extension points for MainStage, LumaRig, ProPresenter, Planning Center, and a future ChatGPT relay
+The bridge now has two brains:
+
+1. **Ableton execution**
+   - tracks
+   - scenes
+   - tempo
+   - meter
+   - clips
+   - mute / solo / volume
+   - scene launch
+   - stop all
+
+2. **Local session organization**
+   - reusable Song Library stored on the Mac
+   - song tempo + meter
+   - reusable section order
+   - section repeats
+   - reload a saved song into a later Ableton Set
+   - LAN UI for browsing and loading saved songs
+
+The organizer state is stored at:
+
+```text
+~/Library/Application Support/LumaLiveBridge/library.json
+```
+
+No cloud account is required.
+
+## Plain-language example
+
+Type:
+
+```text
+Create a song called Gratitude at 72 BPM in 6/8 with Intro, Verse, Chorus, Bridge x2 and Outro
+```
+
+Luma previews a plan that:
+
+1. sets Ableton to 72 BPM
+2. sets the meter to 6/8
+3. creates Intro
+4. creates Verse
+5. creates Chorus
+6. creates Bridge 1
+7. creates Bridge 2
+8. creates Outro
+9. saves Gratitude to the local Song Library
+
+Nothing changes until **Apply to Ableton** is pressed.
+
+Later:
+
+```text
+Load song Gratitude
+```
+
+Luma reads the saved song from the local library and rebuilds its tempo, meter, and section scenes in the current Ableton Set.
+
+## Architecture
+
+```text
+Mac / iPad PWA
+      |
+      | HTTP + SSE on local LAN
+      v
+node-bridge.js
+      |
+      +--> parser.js
+      |      plain language -> reviewed command plan
+      |
+      +--> validator.js
+      |      allowlisted command schema
+      |
+      +--> session-store.js
+      |      local reusable song library
+      |
+      +--> local organizer commands
+      |      create_song / load_song
+      |
+      +--> Ableton commands
+             |
+             v
+        live-api.js
+             |
+             v
+        Ableton Live 12
+```
+
+Local organizer commands never get forwarded into LiveAPI. They are handled by the bridge and can only expand into the same validated Ableton command allowlist.
 
 ## Supported commands
 
-v0.1 implements:
+### Ableton
 
 - create MIDI/audio track
 - rename track
@@ -34,93 +115,83 @@ v0.1 implements:
 - mute/unmute track
 - solo/unsolo track
 
-Example:
+### Organizer
 
-> Create a song called Gratitude at 68 BPM with Intro, Verse, Chorus, Bridge, Build and Altar.
+- create/save reusable song
+- load reusable song
 
-The remote produces a plan first. Nothing changes in Ableton until you press **Apply**.
-
-## Architecture
-
-```text
-Browser / iPad PWA
-        |
-        | HTTP + SSE on your LAN
-        v
-node-bridge.js (Node for Max)
-        |
-        | allowlisted JSON commands
-        v
-live-api.js (Max JS + LiveAPI)
-        |
-        v
-Ableton Live 12
-```
+More organizer operations will build on this same local model: arrangements, setlists, track templates, Planning Center import, and the ChatGPT relay.
 
 ## Install on macOS
 
-### 1. Clone the repo
+### 1. Clone
 
 ```bash
 git clone https://github.com/Elicasta/Lumalivebridge.git
 cd Lumalivebridge
 ```
 
-### 2. Run the installer
+### 2. Install
 
 ```bash
 chmod +x scripts/install-macos.sh
 ./scripts/install-macos.sh
 ```
 
-This creates a symlink from Ableton's User Library directly to the repo's `device/` folder:
-
-```text
-~/Music/Ableton/User Library/Presets/MIDI Effects/Max MIDI Effect/Luma Live Bridge/
-    -> <your clone>/device/
-```
-
-That is intentional. A normal `git pull` updates the bridge source immediately without copying/reinstalling files.
+The installer symlinks the repo's `device/` folder into Ableton's User Library. A normal git update changes the bridge source without copying it again.
 
 ### 3. Create the Max for Live device once
 
-Ableton requires the final `.amxd` to be saved from a Max for Live editor.
+Ableton requires the final `.amxd` to be saved from Max for Live.
 
 1. Open Ableton Live 12.
 2. Create a MIDI track.
 3. Drag a blank **Max MIDI Effect** onto it.
 4. Choose **Edit in Max**.
-5. In the Max-for-Live patcher, select all and delete the blank objects.
-6. Open `LumaLiveBridge.maxpat` from the installed Luma Live Bridge folder.
-7. Copy all objects from that patch.
-8. Paste them into the blank Max MIDI Effect patcher.
-9. Save the device as **Luma Live Bridge.amxd** in the same Luma Live Bridge folder.
+5. Delete the blank patch contents.
+6. Open `device/LumaLiveBridge.maxpat`.
+7. Copy its objects into the blank Max MIDI Effect patcher.
+8. Save as **Luma Live Bridge.amxd** in the Luma Live Bridge User Library folder.
 
-That one-time step makes it a real Max for Live device. After that it appears in Ableton's Browser.
+### 4. Load it
 
-### 4. Load the device
+Drop **Luma Live Bridge.amxd** on one MIDI track.
 
-Drop **Luma Live Bridge.amxd** on one MIDI track in the Set.
-
-The Max console/device will print a LAN URL similar to:
+The device prints a LAN URL similar to:
 
 ```text
 http://192.168.1.20:7878/?token=...
 ```
 
-Open that exact URL on your iPad or Mac browser.
+Open that exact URL on the Mac or iPad.
 
-The bridge creates a persistent local token the first time it runs and reuses it on later launches, so an installed iPad PWA keeps working. Set `LUMA_BRIDGE_TOKEN` if you want to override it. API calls without the token are rejected.
-
-### Updating later
-
-From the repo:
+## Updating
 
 ```bash
 ./scripts/update-macos.sh
 ```
 
-Because Ableton points at the checkout through a symlink, there is no second install step after a pull. Reload the Max for Live device if Max has not already picked up the changed source.
+The PWA cache is versioned, so a bridge update will replace the previous cached interface instead of leaving an old iPad UI behind.
+
+## Local API
+
+Authenticated with the launch token:
+
+- `GET /api/state`
+- `GET /api/library`
+- `POST /api/plan`
+- `POST /api/apply`
+- `POST /api/direct`
+- `GET /api/log`
+- `GET /events`
+
+## Safety model
+
+The browser cannot submit arbitrary JavaScript, shell commands, Max code, LiveAPI paths, or filesystem paths.
+
+Plain language is translated to allowlisted structured commands first. The user sees that plan before execution.
+
+Local organizer commands are routed separately from Ableton commands. Loading a saved song can only expand into validated commands such as `set_tempo`, `set_meter`, and `create_scene`.
 
 ## Development
 
@@ -130,31 +201,26 @@ No third-party npm packages are required.
 npm test
 ```
 
-Tests cover the command parser and validator without requiring Ableton or Max.
+Tests cover:
 
-## Safety model
+- plain-language parsing
+- validation
+- section repeat parsing
+- persistent song storage
+- reload expansion back into Ableton commands
 
-The browser cannot send arbitrary JavaScript, Max code, LiveAPI paths, shell commands, or file-system operations.
+## Next organizer layer
 
-It can only request command types defined in `device/protocol.js` and accepted by `device/validator.js`.
+The next contained build is:
 
-A natural-language request is parsed into that allowlist, shown as a preview, and only sent to Live after confirmation.
+```text
+Song Library
+    ↓
+Arrangement
+    ↓
+Setlist
+    ↓
+Build Ableton Session
+```
 
-## Local API
-
-With the bridge running:
-
-- `GET /api/state`
-- `POST /api/plan` with `{"text":"set tempo to 72"}`
-- `POST /api/apply` with a previewed plan
-- `POST /api/direct` with one validated structured command
-- `GET /api/log`
-- `GET /events` for Server-Sent Events
-
-API routes require the launch token.
-
-## Current limitation
-
-ChatGPT in the cloud cannot directly reach `localhost` or your private LAN. The bridge is intentionally local-first.
-
-The next layer will be an authenticated relay/plugin that can send the same allowlisted command schema to this bridge. The local execution layer does not need to change when that is added.
+That is where a song can keep its normal arrangement while a specific Sunday uses a different section order.
