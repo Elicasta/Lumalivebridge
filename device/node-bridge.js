@@ -8,6 +8,8 @@ const crypto = require("crypto");
 const maxAPI = require("max-api");
 const { parseText } = require("./parser");
 const { validateCommand, validatePlan } = require("./validator");
+const { createStore } = require("./song-store");
+const { buildArrangement, locatePosition, findJumpTarget } = require("./arrangement");
 
 const PORT = Number(process.env.LUMA_BRIDGE_PORT || 7878);
 const HOST = "0.0.0.0";
@@ -15,12 +17,53 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const APP_DIR = path.join(os.homedir(), "Library", "Application Support", "LumaLiveBridge");
 const LOG_FILE = path.join(APP_DIR, "audit.jsonl");
 const TOKEN_FILE = path.join(APP_DIR, "token");
+const DATA_DIR = path.join(APP_DIR, "library");
 const pending = new Map();
 const clients = new Set();
 
 let latestState = null;
+let activeArrangement = null;
+let refreshInFlight = false;
 
 fs.mkdirSync(APP_DIR, { recursive: true });
+const store = createStore(DATA_DIR);
+
+function songMap() {
+  const map = {};
+  for (const song of store.listSongs()) map[song.id] = song;
+  return map;
+}
+
+function rebuildActiveArrangement() {
+  const activeId = store.getActiveSetlistId();
+  const setlist = activeId ? store.getSetlist(activeId) : null;
+  if (!setlist) {
+    activeArrangement = null;
+    return null;
+  }
+  activeArrangement = buildArrangement(setlist, songMap());
+  return activeArrangement;
+}
+
+function libraryPayload() {
+  return {
+    songs: store.listSongs(),
+    setlists: store.listSetlists(),
+    activeSetlistId: store.getActiveSetlistId(),
+    arrangement: activeArrangement
+  };
+}
+
+function enrichState(state) {
+  if (!state) return state;
+  return {
+    ...state,
+    liveContext: locatePosition(activeArrangement, state.currentSongTime),
+    activeSetlistId: store.getActiveSetlistId()
+  };
+}
+
+rebuildActiveArrangement();
 
 function loadOrCreateToken() {
   if (process.env.LUMA_BRIDGE_TOKEN) return process.env.LUMA_BRIDGE_TOKEN;
@@ -91,7 +134,7 @@ async function refreshState() {
   try {
     const result = await sendToMax({ type: "get_state", args: {} }, 2500);
     if (result && result.state) {
-      latestState = result.state;
+      latestState = enrichState(result.state);
       broadcast("state", latestState);
     }
     return latestState;
@@ -157,7 +200,7 @@ maxAPI.addHandler("result_json", (payload) => {
 
 maxAPI.addHandler("state_json", (payload) => {
   try {
-    latestState = typeof payload === "string" ? JSON.parse(payload) : payload;
+    latestState = enrichState(typeof payload === "string" ? JSON.parse(payload) : payload);
     broadcast("state", latestState);
   } catch (error) {
     maxAPI.post("Luma Live Bridge state parse error: " + error.message);
@@ -247,7 +290,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Headers": "Content-Type, X-Luma-Token",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS"
     });
     return res.end();
   }
@@ -301,6 +344,117 @@ const server = http.createServer(async (req, res) => {
       return json(res, result.ok ? 200 : 409, result);
     }
 
+    if (req.method === "GET" && url.pathname === "/api/library") {
+      return json(res, 200, { ok: true, ...libraryPayload() });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/songs") {
+      const body = await readJson(req);
+      const song = store.saveSong(body.song || body);
+      rebuildActiveArrangement();
+      const library = libraryPayload();
+      broadcast("library", library);
+      writeAudit("song_saved", { songId: song.id, title: song.title });
+      return json(res, 200, { ok: true, song, ...library });
+    }
+
+    const songDeleteMatch = url.pathname.match(/^\/api\/songs\/([^/]+)$/);
+    if (req.method === "DELETE" && songDeleteMatch) {
+      const songId = decodeURIComponent(songDeleteMatch[1]);
+      for (const setlist of store.listSetlists()) {
+        if (setlist.items.some((item) => item.songId === songId)) {
+          throw new Error("Remove this song from setlists before deleting it");
+        }
+      }
+      store.deleteSong(songId);
+      rebuildActiveArrangement();
+      const library = libraryPayload();
+      broadcast("library", library);
+      writeAudit("song_deleted", { songId });
+      return json(res, 200, { ok: true, ...library });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/setlists") {
+      const body = await readJson(req);
+      const setlist = store.saveSetlist(body.setlist || body);
+      if (store.getActiveSetlistId() === setlist.id) rebuildActiveArrangement();
+      const library = libraryPayload();
+      broadcast("library", library);
+      writeAudit("setlist_saved", { setlistId: setlist.id, title: setlist.title });
+      return json(res, 200, { ok: true, setlist, ...library });
+    }
+
+    const setlistDeleteMatch = url.pathname.match(/^\/api\/setlists\/([^/]+)$/);
+    if (req.method === "DELETE" && setlistDeleteMatch) {
+      const setlistId = decodeURIComponent(setlistDeleteMatch[1]);
+      store.deleteSetlist(setlistId);
+      rebuildActiveArrangement();
+      const library = libraryPayload();
+      broadcast("library", library);
+      writeAudit("setlist_deleted", { setlistId });
+      return json(res, 200, { ok: true, ...library });
+    }
+
+    const syncMatch = url.pathname.match(/^\/api\/setlists\/([^/]+)\/sync$/);
+    if (req.method === "POST" && syncMatch) {
+      const setlistId = decodeURIComponent(syncMatch[1]);
+      const setlist = store.getSetlist(setlistId);
+      if (!setlist) throw new Error("Setlist not found");
+      const arrangement = buildArrangement(setlist, songMap());
+      const commandResult = await sendToMax({
+        type: "sync_cue_points",
+        args: {
+          replace: true,
+          points: arrangement.markers.map((point) => ({
+            time: point.time,
+            name: point.name
+          }))
+        }
+      }, 10000);
+      store.setActiveSetlistId(setlist.id);
+      activeArrangement = arrangement;
+      await refreshState();
+      const library = libraryPayload();
+      broadcast("library", library);
+      writeAudit("setlist_synced", {
+        setlistId: setlist.id,
+        title: setlist.title,
+        markers: arrangement.markers.length
+      });
+      return json(res, 200, {
+        ok: true,
+        arrangement,
+        sync: commandResult,
+        state: latestState,
+        ...library
+      });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/arrangement") {
+      return json(res, 200, { ok: true, arrangement: activeArrangement });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jump") {
+      const body = await readJson(req);
+      const target = findJumpTarget(activeArrangement, String(body.songId || ""), body.sectionId ? String(body.sectionId) : null);
+      await sendToMax({ type: "set_tempo", args: { bpm: target.song.bpm } });
+      await sendToMax({
+        type: "set_meter",
+        args: {
+          numerator: target.song.meter.numerator,
+          denominator: target.song.meter.denominator
+        }
+      });
+      await sendToMax({ type: "jump_to_time", args: { time: target.time } });
+      await refreshState();
+      writeAudit("arrangement_jump", {
+        songId: target.song.songId,
+        sectionId: target.section ? target.section.id : null,
+        time: target.time
+      });
+      return json(res, 200, { ok: true, state: latestState });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/log") {
       let lines = [];
       try {
@@ -327,6 +481,7 @@ const server = http.createServer(async (req, res) => {
       if (latestState) {
         res.write("event: state\ndata: " + JSON.stringify(latestState) + "\n\n");
       }
+      res.write("event: library\ndata: " + JSON.stringify(libraryPayload()) + "\n\n");
       req.on("close", () => clients.delete(res));
       return;
     }
@@ -346,6 +501,15 @@ server.listen(PORT, HOST, () => {
   maxAPI.outlet("remote_url", primary);
   writeAudit("bridge_started", { port: PORT });
   setTimeout(() => refreshState(), 700);
+  setInterval(async () => {
+    if (refreshInFlight) return;
+    refreshInFlight = true;
+    try {
+      await refreshState();
+    } finally {
+      refreshInFlight = false;
+    }
+  }, 750);
 });
 
 process.on("SIGTERM", () => server.close());
