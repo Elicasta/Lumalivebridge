@@ -49,11 +49,64 @@ function target(value, field) {
   throw new Error(field + " must contain name or index");
 }
 
+function libraryTarget(value, field) {
+  if (!isObject(value)) throw new Error(field + " must be an object");
+  if (value.id != null) return { id: cleanName(value.id, field + ".id") };
+  if (value.name != null) return { name: cleanName(value.name, field + ".name") };
+  throw new Error(field + " must contain id or name");
+}
+
 function optionalIndex(value, field) {
   if (value == null) return -1;
   const index = integer(value, field);
   if (index < -1) throw new Error(field + " must be -1 or >= 0");
   return index;
+}
+
+function tempo(value, field) {
+  const bpm = finiteNumber(value, field);
+  if (bpm < 20 || bpm > 999) throw new Error("tempo must be between 20 and 999 BPM");
+  return bpm;
+}
+
+function meter(value, field) {
+  if (!isObject(value)) throw new Error(field + " must be an object");
+  const numerator = integer(value.numerator, field + ".numerator");
+  const denominator = integer(value.denominator, field + ".denominator");
+  if (numerator < 1 || numerator > 32) throw new Error("meter numerator must be 1..32");
+  if (![1, 2, 4, 8, 16].includes(denominator)) {
+    throw new Error("meter denominator must be 1, 2, 4, 8, or 16");
+  }
+  return { numerator, denominator };
+}
+
+function sections(value, field) {
+  if (!Array.isArray(value)) throw new Error(field + " must be an array");
+  if (value.length === 0) throw new Error(field + " must contain at least one section");
+  if (value.length > 80) throw new Error(field + " is too large");
+
+  return value.map((section, index) => {
+    const item = isObject(section) ? section : { name: section };
+    const repeat = item.repeat == null ? 1 : integer(item.repeat, field + "[" + index + "].repeat");
+    if (repeat < 1 || repeat > 16) {
+      throw new Error(field + "[" + index + "].repeat must be 1..16");
+    }
+
+    const normalized = {
+      name: cleanName(item.name, field + "[" + index + "].name"),
+      repeat
+    };
+
+    if (item.bars != null) {
+      const bars = integer(item.bars, field + "[" + index + "].bars");
+      if (bars < 1 || bars > 512) {
+        throw new Error(field + "[" + index + "].bars must be 1..512");
+      }
+      normalized.bars = bars;
+    }
+
+    return normalized;
+  });
 }
 
 function validateCommand(input, options = {}) {
@@ -103,23 +156,13 @@ function validateCommand(input, options = {}) {
       };
       break;
 
-    case "set_tempo": {
-      const bpm = finiteNumber(args.bpm, "set_tempo.bpm");
-      if (bpm < 20 || bpm > 999) throw new Error("tempo must be between 20 and 999 BPM");
-      normalized = { bpm };
+    case "set_tempo":
+      normalized = { bpm: tempo(args.bpm, "set_tempo.bpm") };
       break;
-    }
 
-    case "set_meter": {
-      const numerator = integer(args.numerator, "set_meter.numerator");
-      const denominator = integer(args.denominator, "set_meter.denominator");
-      if (numerator < 1 || numerator > 32) throw new Error("meter numerator must be 1..32");
-      if (![1, 2, 4, 8, 16].includes(denominator)) {
-        throw new Error("meter denominator must be 1, 2, 4, 8, or 16");
-      }
-      normalized = { numerator, denominator };
+    case "set_meter":
+      normalized = meter(args, "set_meter");
       break;
-    }
 
     case "fire_scene":
       normalized = { scene: target(args.scene, "fire_scene.scene") };
@@ -186,6 +229,22 @@ function validateCommand(input, options = {}) {
       normalized = {
         track: target(args.track, "set_track_solo.track"),
         value: bool(args.value, "set_track_solo.value")
+      };
+      break;
+
+    case "create_song":
+      normalized = {
+        title: cleanName(args.title, "create_song.title"),
+        bpm: args.bpm == null ? null : tempo(args.bpm, "create_song.bpm"),
+        meter: args.meter == null ? null : meter(args.meter, "create_song.meter"),
+        key: args.key == null ? null : cleanName(args.key, "create_song.key"),
+        sections: sections(args.sections, "create_song.sections")
+      };
+      break;
+
+    case "load_song":
+      normalized = {
+        song: libraryTarget(args.song, "load_song.song")
       };
       break;
 
