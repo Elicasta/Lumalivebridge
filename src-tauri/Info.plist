@@ -4,5 +4,7 @@
 <dict>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Luma Live uses your local network so an iPad or iPhone can connect to the Mac running the service.</string>
+  <key>LSRequiresCarbon</key>
+  <false/>
 </dict>
 </plist>
