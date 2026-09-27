@@ -92,14 +92,11 @@ fn normalize_sections(input: &[SectionInput], length_bars: i64) -> Result<Vec<Se
 }
 
 impl Database {
-    pub fn open(path: &Path) -> Result<Self, String> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    fn initialize(conn: Connection, use_wal: bool) -> Result<Self, String> {
+        if use_wal {
+            conn.pragma_update(None, "journal_mode", "WAL")
+                .map_err(|e| e.to_string())?;
         }
-
-        let conn = Connection::open(path).map_err(|e| e.to_string())?;
-        conn.pragma_update(None, "journal_mode", "WAL")
-            .map_err(|e| e.to_string())?;
         conn.pragma_update(None, "foreign_keys", "ON")
             .map_err(|e| e.to_string())?;
 
@@ -149,6 +146,19 @@ impl Database {
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    pub fn open(path: &Path) -> Result<Self, String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let conn = Connection::open(path).map_err(|e| e.to_string())?;
+        Self::initialize(conn, true)
+    }
+
+    pub fn open_in_memory() -> Result<Self, String> {
+        let conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
+        Self::initialize(conn, false)
     }
 
     pub fn library(&self) -> Result<LibraryPayload, String> {
