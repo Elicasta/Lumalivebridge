@@ -8,6 +8,8 @@ const crypto = require("crypto");
 const maxAPI = require("max-api");
 const { parseText } = require("./parser");
 const { validateCommand, validatePlan } = require("./validator");
+const { isLocalCommand } = require("./protocol");
+const { SessionStore } = require("./session-store");
 
 const PORT = Number(process.env.LUMA_BRIDGE_PORT || 7878);
 const HOST = "0.0.0.0";
@@ -15,12 +17,14 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const APP_DIR = path.join(os.homedir(), "Library", "Application Support", "LumaLiveBridge");
 const LOG_FILE = path.join(APP_DIR, "audit.jsonl");
 const TOKEN_FILE = path.join(APP_DIR, "token");
+const LIBRARY_FILE = path.join(APP_DIR, "library.json");
 const pending = new Map();
 const clients = new Set();
 
 let latestState = null;
 
 fs.mkdirSync(APP_DIR, { recursive: true });
+const sessionStore = new SessionStore(LIBRARY_FILE);
 
 function loadOrCreateToken() {
   if (process.env.LUMA_BRIDGE_TOKEN) return process.env.LUMA_BRIDGE_TOKEN;
@@ -58,6 +62,10 @@ function broadcast(type, data) {
       clients.delete(res);
     }
   }
+}
+
+function broadcastLibrary() {
+  broadcast("library", sessionStore.snapshot());
 }
 
 function localUrls() {
@@ -100,6 +108,34 @@ async function refreshState() {
   }
 }
 
+async function executeCommand(command) {
+  if (!isLocalCommand(command.type)) {
+    return {
+      kind: "ableton",
+      result: await sendToMax(command)
+    };
+  }
+
+  const localResult = sessionStore.apply(command);
+  const liveResults = [];
+
+  for (const rawLiveCommand of localResult.liveCommands || []) {
+    const liveCommand = validateCommand(rawLiveCommand);
+    const result = await sendToMax(liveCommand);
+    liveResults.push({ command: liveCommand, result });
+  }
+
+  if (localResult.mutation) {
+    broadcastLibrary();
+  }
+
+  return {
+    kind: "local",
+    ...localResult,
+    liveResults
+  };
+}
+
 async function applyPlan(rawPlan) {
   const plan = validatePlan(rawPlan);
   const results = [];
@@ -113,9 +149,15 @@ async function applyPlan(rawPlan) {
   for (let index = 0; index < plan.commands.length; index += 1) {
     const command = plan.commands[index];
     try {
-      const result = await sendToMax(command);
+      const result = await executeCommand(command);
       results.push({ index, ok: true, command, result });
-      writeAudit("command_applied", { planId: plan.id, index, command });
+      writeAudit("command_applied", {
+        planId: plan.id,
+        index,
+        command,
+        expandedCommandCount:
+          result && Array.isArray(result.liveResults) ? result.liveResults.length : 0
+      });
     } catch (error) {
       const failure = {
         index,
@@ -135,7 +177,8 @@ async function applyPlan(rawPlan) {
     ok: results.every((item) => item.ok),
     planId: plan.id,
     results,
-    state: latestState
+    state: latestState,
+    library: sessionStore.snapshot()
   };
 }
 
@@ -253,7 +296,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === "/health") {
-    return json(res, 200, { ok: true, version: "0.1.0" });
+    return json(res, 200, { ok: true, version: "0.2.0" });
   }
 
   if (url.pathname.startsWith("/api/") || url.pathname === "/events") {
@@ -266,6 +309,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/state") {
       const state = (await refreshState()) || latestState;
       return json(res, 200, { ok: true, state });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/library") {
+      return json(res, 200, {
+        ok: true,
+        library: sessionStore.snapshot()
+      });
     }
 
     if (req.method === "POST" && url.pathname === "/api/plan") {
@@ -327,6 +377,9 @@ const server = http.createServer(async (req, res) => {
       if (latestState) {
         res.write("event: state\ndata: " + JSON.stringify(latestState) + "\n\n");
       }
+      res.write(
+        "event: library\ndata: " + JSON.stringify(sessionStore.snapshot()) + "\n\n"
+      );
       req.on("close", () => clients.delete(res));
       return;
     }
@@ -344,7 +397,7 @@ server.listen(PORT, HOST, () => {
   maxAPI.post("Luma Live Bridge running: " + primary);
   maxAPI.outlet("status", "running");
   maxAPI.outlet("remote_url", primary);
-  writeAudit("bridge_started", { port: PORT });
+  writeAudit("bridge_started", { port: PORT, version: "0.2.0" });
   setTimeout(() => refreshState(), 700);
 });
 
