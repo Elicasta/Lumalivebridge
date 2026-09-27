@@ -25,9 +25,12 @@
   const applyBtn = el("applyBtn");
   const sceneGrid = el("sceneGrid");
   const refreshBtn = el("refreshBtn");
+  const libraryList = el("libraryList");
+  const libraryEmpty = el("libraryEmpty");
 
   let currentPlan = null;
   let currentState = null;
+  let currentLibrary = null;
 
   function showError(message) {
     errorBox.textContent = message || "";
@@ -54,24 +57,33 @@
     return data;
   }
 
+  function refLabel(value) {
+    if (!value) return "unknown";
+    if (value.name) return value.name;
+    if (value.id) return value.id;
+    if (value.index != null) return "#" + (Number(value.index) + 1);
+    return "unknown";
+  }
+
   function labelCommand(command) {
     const a = command.args || {};
-    const ref = (value) => value && (value.name || ("#" + (Number(value.index) + 1)));
     const labels = {
       set_tempo: () => "Set tempo to " + a.bpm + " BPM",
       set_meter: () => "Set meter to " + a.numerator + "/" + a.denominator,
       create_track: () => "Create " + a.kind + " track · " + a.name,
-      rename_track: () => "Rename track " + ref(a.track) + " → " + a.name,
+      rename_track: () => "Rename track " + refLabel(a.track) + " → " + a.name,
       create_scene: () => "Create scene · " + a.name,
-      rename_scene: () => "Rename scene " + ref(a.scene) + " → " + a.name,
-      fire_scene: () => "Launch scene · " + ref(a.scene),
+      rename_scene: () => "Rename scene " + refLabel(a.scene) + " → " + a.name,
+      fire_scene: () => "Launch scene · " + refLabel(a.scene),
       stop_all_clips: () => "Stop all clips",
-      create_midi_clip: () => "Create MIDI clip on " + ref(a.track) + " / " + ref(a.scene),
-      duplicate_clip: () => "Duplicate clip on " + ref(a.track),
+      create_midi_clip: () => "Create MIDI clip on " + refLabel(a.track) + " / " + refLabel(a.scene),
+      duplicate_clip: () => "Duplicate clip on " + refLabel(a.track),
       set_clip_loop: () => (a.enabled ? "Enable" : "Disable") + " clip loop",
-      set_track_volume: () => "Set " + ref(a.track) + " volume to " + Math.round(a.value * 100) + "%",
-      set_track_mute: () => (a.value ? "Mute " : "Unmute ") + ref(a.track),
-      set_track_solo: () => (a.value ? "Solo " : "Unsolo ") + ref(a.track)
+      set_track_volume: () => "Set " + refLabel(a.track) + " volume to " + Math.round(a.value * 100) + "%",
+      set_track_mute: () => (a.value ? "Mute " : "Unmute ") + refLabel(a.track),
+      set_track_solo: () => (a.value ? "Solo " : "Unsolo ") + refLabel(a.track),
+      create_song: () => "Save reusable song · " + a.title,
+      load_song: () => "Load saved song · " + refLabel(a.song)
     };
     return labels[command.type] ? labels[command.type]() : command.type;
   }
@@ -84,11 +96,17 @@
     plan.commands.forEach((command, index) => {
       const row = document.createElement("div");
       row.className = "plan-row";
-      row.innerHTML = '<span class="num">' + String(index + 1).padStart(2, "0") + '</span><span>' +
-        escapeHtml(labelCommand(command)) + "</span>";
+      row.innerHTML =
+        '<span class="num">' +
+        String(index + 1).padStart(2, "0") +
+        '</span><span>' +
+        escapeHtml(labelCommand(command)) +
+        "</span>";
       planList.appendChild(row);
     });
-    planNotes.innerHTML = (plan.notes || []).map((note) => "<div>• " + escapeHtml(note) + "</div>").join("");
+    planNotes.innerHTML = (plan.notes || [])
+      .map((note) => "<div>• " + escapeHtml(note) + "</div>")
+      .join("");
     planCard.hidden = false;
   }
 
@@ -105,28 +123,106 @@
     tempo.textContent = Number.isFinite(state.tempo) ? Math.round(state.tempo * 10) / 10 : "--";
     meter.textContent = state.meter ? state.meter.numerator + "/" + state.meter.denominator : "--";
 
-    const scene = state.activeSceneIndex == null
-      ? null
-      : (state.scenes || []).find((item) => item.index === state.activeSceneIndex);
+    const scene =
+      state.activeSceneIndex == null
+        ? null
+        : (state.scenes || []).find((item) => item.index === state.activeSceneIndex);
     activeScene.textContent = scene ? scene.name : "--";
 
     sceneGrid.innerHTML = "";
     (state.scenes || []).forEach((item) => {
       const button = document.createElement("button");
       button.className = "scene-button" + (item.index === state.activeSceneIndex ? " active" : "");
-      button.innerHTML = '<span class="scene-number">' + item.number + '</span><span>' + escapeHtml(item.name) + "</span>";
-      button.addEventListener("click", () => direct({
-        type: "fire_scene",
-        args: { scene: { index: item.index } }
-      }));
+      button.innerHTML =
+        '<span class="scene-number">' +
+        item.number +
+        '</span><span>' +
+        escapeHtml(item.name) +
+        "</span>";
+      button.addEventListener("click", () =>
+        direct({
+          type: "fire_scene",
+          args: { scene: { index: item.index } }
+        })
+      );
       sceneGrid.appendChild(button);
     });
   }
 
+  function songMeta(song) {
+    const values = [];
+    if (song.bpm != null) values.push(song.bpm + " BPM");
+    if (song.meter) values.push(song.meter.numerator + "/" + song.meter.denominator);
+    const count = (song.sections || []).reduce(
+      (total, section) => total + Math.max(1, Number(section.repeat) || 1),
+      0
+    );
+    values.push(count + (count === 1 ? " scene" : " scenes"));
+    return values.join(" · ");
+  }
+
+  function renderLibrary(library) {
+    currentLibrary = library || { songs: [] };
+    const songs = currentLibrary.songs || [];
+    libraryList.innerHTML = "";
+    libraryEmpty.hidden = songs.length > 0;
+
+    songs.forEach((song) => {
+      const row = document.createElement("div");
+      row.className = "library-row";
+
+      const info = document.createElement("div");
+      info.className = "library-info";
+
+      const title = document.createElement("strong");
+      title.textContent = song.title;
+
+      const meta = document.createElement("span");
+      meta.textContent = songMeta(song);
+
+      info.append(title, meta);
+
+      const load = document.createElement("button");
+      load.type = "button";
+      load.className = "ghost small";
+      load.textContent = "Load";
+      load.addEventListener("click", async () => {
+        commandInput.value = "Load song " + song.title;
+        await previewCommand(commandInput.value);
+        commandInput.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+
+      row.append(info, load);
+      libraryList.appendChild(row);
+    });
+  }
+
+  async function previewCommand(text) {
+    showError("");
+    previewBtn.disabled = true;
+    try {
+      const data = await api("/api/plan", {
+        method: "POST",
+        body: JSON.stringify({ text })
+      });
+      renderPlan(data.plan);
+      return data.plan;
+    } catch (error) {
+      showError(error.message);
+      return null;
+    } finally {
+      previewBtn.disabled = false;
+    }
+  }
+
   async function refresh() {
     try {
-      const data = await api("/api/state");
-      renderState(data.state);
+      const [stateData, libraryData] = await Promise.all([
+        api("/api/state"),
+        api("/api/library")
+      ]);
+      renderState(stateData.state);
+      renderLibrary(libraryData.library);
       setStatus(true);
     } catch (error) {
       setStatus(false);
@@ -142,24 +238,18 @@
         body: JSON.stringify({ command })
       });
       if (data.state) renderState(data.state);
+      if (data.library) renderLibrary(data.library);
     } catch (error) {
       showError(error.message);
     }
   }
 
-  previewBtn.addEventListener("click", async () => {
-    showError("");
-    previewBtn.disabled = true;
-    try {
-      const data = await api("/api/plan", {
-        method: "POST",
-        body: JSON.stringify({ text: commandInput.value })
-      });
-      renderPlan(data.plan);
-    } catch (error) {
-      showError(error.message);
-    } finally {
-      previewBtn.disabled = false;
+  previewBtn.addEventListener("click", () => previewCommand(commandInput.value));
+
+  commandInput.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      previewCommand(commandInput.value);
     }
   });
 
@@ -174,6 +264,7 @@
         body: JSON.stringify({ plan: currentPlan })
       });
       if (data.state) renderState(data.state);
+      if (data.library) renderLibrary(data.library);
       planCard.hidden = true;
       currentPlan = null;
     } catch (error) {
@@ -192,6 +283,7 @@
   clearBtn.addEventListener("click", () => {
     commandInput.value = "";
     showError("");
+    commandInput.focus();
   });
 
   stopAll.addEventListener("click", () => direct({ type: "stop_all_clips", args: {} }));
@@ -206,6 +298,11 @@
       try {
         renderState(JSON.parse(event.data));
         setStatus(true);
+      } catch (_) {}
+    });
+    events.addEventListener("library", (event) => {
+      try {
+        renderLibrary(JSON.parse(event.data));
       } catch (_) {}
     });
     events.onerror = () => setStatus(false);
