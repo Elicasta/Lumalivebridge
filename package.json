@@ -1,6 +1,6 @@
 {
   "name": "luma-live",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Offline-first church live show-control app with local song library, setlists, LAN remote, and Ableton bridge",
   "scripts": {
