@@ -2,77 +2,149 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#0b0c0e">
-  <title>Luma Live</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#090a0c">
+  <title>Luma Live Remote</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <main class="shell">
-    <header class="topbar">
-      <div>
-        <div class="eyebrow">LUMA LIVE</div>
-        <h1>Church Live</h1>
+  <main class="remote-shell">
+    <header class="remote-header">
+      <div class="brand-lockup">
+        <div class="brand-mark">L</div>
+        <div>
+          <span class="eyebrow">LUMA LIVE</span>
+          <h1>Remote</h1>
+        </div>
       </div>
-      <div id="status" class="status offline">OFFLINE</div>
+      <div id="status" class="status offline"><span class="status-dot"></span><span>OFFLINE</span></div>
     </header>
 
-    <nav class="tabs" aria-label="Luma Live pages">
+    <section class="transport-deck">
+      <button id="playBtn" class="transport-button play-button" aria-label="Play">
+        <span class="transport-icon">▶</span>
+        <span id="playLabel">PLAY</span>
+      </button>
+      <button id="stopBtn" class="transport-button" aria-label="Stop">
+        <span class="transport-icon">■</span>
+        <span>STOP</span>
+      </button>
+      <button id="clickBtn" class="transport-button click-button" aria-label="Metronome">
+        <span class="click-pulse"></span>
+        <span>CLICK</span>
+      </button>
+      <div class="transport-readout">
+        <div><span class="label">BPM</span><strong id="tempo">--</strong></div>
+        <div><span class="label">BAR</span><strong id="barReadout">--</strong></div>
+        <div><span class="label">METER</span><strong id="meter">--</strong></div>
+      </div>
+    </section>
+
+    <nav class="remote-tabs" aria-label="Remote pages">
       <button class="tab active" data-tab="live">Live</button>
-      <button class="tab" data-tab="songs">Songs</button>
       <button class="tab" data-tab="setlist">Setlist</button>
-      <button class="tab" data-tab="command">Command</button>
+      <button class="tab" data-tab="busk">Busk</button>
+      <button class="tab" data-tab="prep">Prep</button>
     </nav>
 
     <div id="error" class="error" hidden></div>
 
     <section class="page active" data-page="live">
-      <section class="card now-card">
-        <div class="now-head">
-          <div>
-            <span class="label">CURRENT SONG</span>
+      <section class="song-stage">
+        <div class="song-stage-top">
+          <button id="previousSongBtn" class="song-step" aria-label="Previous song">
+            <span>PREV</span><strong id="previousSongName">—</strong>
+          </button>
+
+          <div class="song-identity">
+            <span class="eyebrow">CURRENT SONG</span>
             <h2 id="currentSong">No active setlist</h2>
-            <div id="currentMeta" class="meta">Sync a setlist to Ableton.</div>
+            <div id="currentMeta" class="song-meta">Sync a setlist to Ableton.</div>
           </div>
-          <button id="stopAll" class="danger">STOP ALL</button>
+
+          <button id="nextSongBtn" class="song-step next" aria-label="Next song">
+            <span>NEXT</span><strong id="nextSongName">—</strong>
+          </button>
         </div>
-        <div class="now-section">
-          <span class="label">NOW</span>
-          <strong id="currentSection">--</strong>
-          <span class="next">NEXT <b id="nextSection">--</b></span>
+
+        <div class="song-progress-track" aria-hidden="true">
+          <div id="songProgress" class="song-progress-fill"></div>
         </div>
-        <div id="liveSectionButtons" class="section-buttons"></div>
+
+        <div class="section-now-grid">
+          <div class="section-now">
+            <span class="label">NOW</span>
+            <strong id="currentSection">—</strong>
+          </div>
+          <div class="section-next">
+            <span class="label">NEXT</span>
+            <strong id="nextSection">—</strong>
+          </div>
+        </div>
+
+        <div class="section-nav-row">
+          <button id="previousSectionBtn" class="secondary-action">← Previous Section</button>
+          <button id="nextSectionBtn" class="primary-action">Next Section →</button>
+        </div>
+
+        <div id="liveSectionButtons" class="section-grid"></div>
+        <div class="jump-note">Section jumps currently move Ableton immediately. Musical next-bar scheduling is the next bridge layer.</div>
       </section>
 
-      <section class="card">
-        <div class="section-title">
+      <section class="panel service-panel">
+        <div class="panel-heading">
           <div>
-            <span class="label">SERVICE</span>
-            <h2 id="activeSetlistTitle">No setlist synced</h2>
+            <span class="eyebrow">SERVICE</span>
+            <h3 id="activeSetlistTitle">No setlist synced</h3>
           </div>
-          <button id="refreshBtn" class="ghost small">Refresh</button>
+          <button id="refreshBtn" class="quiet small">Refresh</button>
         </div>
-        <div id="liveSetlist" class="live-setlist"></div>
-      </section>
-
-      <section class="card compact-card">
-        <div class="session-row">
-          <div><span class="label">TEMPO</span><strong id="tempo">--</strong></div>
-          <div><span class="label">METER</span><strong id="meter">--</strong></div>
-          <div><span class="label">POSITION</span><strong id="position">--</strong></div>
-        </div>
+        <div id="liveSetlist" class="service-stack"></div>
       </section>
     </section>
 
-    <section class="page" data-page="songs">
-      <section class="card">
-        <div class="section-title">
-          <div>
-            <span class="label">SONG LIBRARY</span>
-            <h2 id="songEditorHeading">New Song</h2>
-          </div>
-          <button id="newSongBtn" class="ghost small">New</button>
+    <section class="page" data-page="setlist">
+      <section class="panel">
+        <div class="panel-heading">
+          <div><span class="eyebrow">ACTIVE ARRANGEMENT</span><h3>Service Order</h3></div>
+          <span id="activeSongCount" class="pill">0</span>
+        </div>
+        <div id="arrangementSetlist" class="arrangement-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div><span class="eyebrow">SAVED SERVICES</span><h3>Load Setlist</h3></div>
+          <span id="savedSetlistCount" class="pill">0</span>
+        </div>
+        <div id="savedSetlistRemote" class="saved-setlists"></div>
+      </section>
+    </section>
+
+    <section class="page" data-page="busk">
+      <section class="panel busk-panel">
+        <div class="panel-heading">
+          <div><span class="eyebrow">SPONTANEOUS</span><h3>Session Tools</h3></div>
+          <button id="stopAll" class="panic">STOP ALL</button>
+        </div>
+        <p class="panel-copy">Session View stays available for pads, vamps, shout loops, altar moments, and other spontaneous tools.</p>
+        <div id="sceneGrid" class="scene-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div><span class="eyebrow">TRACKS</span><h3>Quick Mute / Solo</h3></div>
+        </div>
+        <div id="trackGrid" class="track-grid"></div>
+      </section>
+    </section>
+
+    <section class="page" data-page="prep">
+      <section class="panel">
+        <div class="panel-heading">
+          <div><span class="eyebrow">SONG LIBRARY</span><h3 id="songEditorHeading">New Song</h3></div>
+          <button id="newSongBtn" class="quiet small">New</button>
         </div>
 
         <div class="form-grid">
@@ -91,94 +163,83 @@
         </div>
 
         <label>Sections
-          <textarea id="songSections" rows="8" placeholder="Intro @ 1&#10;Verse 1 @ 9&#10;Chorus @ 25&#10;Verse 2 @ 41&#10;Bridge @ 57&#10;Vamp @ 73&#10;End @ 89"></textarea>
+          <textarea id="songSections" rows="7" placeholder="Intro @ 1&#10;Verse 1 @ 9&#10;Chorus @ 25&#10;Bridge @ 57&#10;Vamp @ 81"></textarea>
         </label>
-        <div class="helper">One section per line: <code>Section Name @ start bar</code>. These become reusable namespaced locators.</div>
+        <div class="helper">One line per section: <code>Name @ start bar</code>.</div>
         <div class="actions">
-          <button id="deleteSongBtn" class="ghost danger-text" hidden>Delete</button>
-          <button id="saveSongBtn" class="primary">Save Song</button>
+          <button id="deleteSongBtn" class="quiet danger-text" hidden>Delete</button>
+          <button id="saveSongBtn" class="primary-action compact">Save Song</button>
         </div>
-      </section>
 
-      <section class="card">
-        <div class="section-title">
-          <div><span class="label">LIBRARY</span><h2>Saved Songs</h2></div>
+        <div class="divider"></div>
+        <div class="panel-heading">
+          <div><span class="eyebrow">SAVED SONGS</span><h3>Library</h3></div>
           <span id="songCount" class="pill">0</span>
         </div>
         <div id="songList" class="library-list"></div>
       </section>
-    </section>
 
-    <section class="page" data-page="setlist">
-      <section class="card">
-        <div class="section-title">
-          <div><span class="label">SETLIST BUILDER</span><h2 id="setlistEditorHeading">New Setlist</h2></div>
-          <button id="newSetlistBtn" class="ghost small">New</button>
+      <section class="panel">
+        <div class="panel-heading">
+          <div><span class="eyebrow">SETLIST BUILDER</span><h3 id="setlistEditorHeading">New Setlist</h3></div>
+          <button id="newSetlistBtn" class="quiet small">New</button>
         </div>
 
-        <div class="form-grid setlist-fields">
-          <label>Service / Setlist name<input id="setlistTitle" placeholder="Sunday AM"></label>
-          <label>Gap between songs (bars)<input id="setlistGap" type="number" min="0" max="64" value="4"></label>
+        <div class="form-grid">
+          <label>Service name<input id="setlistTitle" placeholder="Sunday AM"></label>
+          <label>Gap between songs<input id="setlistGap" type="number" min="0" max="64" value="4"></label>
         </div>
 
         <div class="add-song-row">
           <select id="addSongSelect"></select>
           <button id="addSongBtn">Add Song</button>
         </div>
-
         <div id="setlistItems" class="setlist-items"></div>
 
         <div class="actions split-actions">
-          <button id="deleteSetlistBtn" class="ghost danger-text" hidden>Delete</button>
+          <button id="deleteSetlistBtn" class="quiet danger-text" hidden>Delete</button>
           <div>
-            <button id="saveSetlistBtn" class="ghost">Save</button>
-            <button id="syncSetlistBtn" class="primary">Sync to Ableton</button>
+            <button id="saveSetlistBtn" class="quiet">Save</button>
+            <button id="syncSetlistBtn" class="primary-action compact">Sync to Ableton</button>
           </div>
         </div>
-      </section>
 
-      <section class="card">
-        <div class="section-title">
-          <div><span class="label">SAVED SERVICES</span><h2>Setlists</h2></div>
+        <div class="divider"></div>
+        <div class="panel-heading">
+          <div><span class="eyebrow">SAVED SERVICES</span><h3>Setlists</h3></div>
           <span id="setlistCount" class="pill">0</span>
         </div>
         <div id="setlistList" class="library-list"></div>
       </section>
-    </section>
 
-    <section class="page" data-page="command">
-      <section class="card command-card">
-        <label for="commandInput">Tell Ableton what to do</label>
-        <textarea id="commandInput" rows="4" placeholder="Set tempo to 72"></textarea>
+      <section class="panel command-panel">
+        <div class="panel-heading">
+          <div><span class="eyebrow">COMMAND</span><h3>Plain Language</h3></div>
+        </div>
+        <textarea id="commandInput" rows="3" placeholder="Set tempo to 72"></textarea>
         <div class="actions">
-          <button id="clearBtn" class="ghost">Clear</button>
-          <button id="previewBtn" class="primary">Preview</button>
+          <button id="clearBtn" class="quiet">Clear</button>
+          <button id="previewBtn" class="primary-action compact">Preview</button>
         </div>
       </section>
 
-      <section id="planCard" class="card" hidden>
-        <div class="section-title">
-          <div><span class="label">PREVIEW</span><h2 id="planTitle">Command plan</h2></div>
+      <section id="planCard" class="panel" hidden>
+        <div class="panel-heading">
+          <div><span class="eyebrow">PREVIEW</span><h3 id="planTitle">Command plan</h3></div>
           <span id="confidence" class="pill"></span>
         </div>
         <div id="planList" class="plan-list"></div>
         <div id="planNotes" class="notes"></div>
         <div class="actions">
-          <button id="cancelBtn" class="ghost">Cancel</button>
-          <button id="applyBtn" class="primary">Apply to Ableton</button>
+          <button id="cancelBtn" class="quiet">Cancel</button>
+          <button id="applyBtn" class="primary-action compact">Apply to Ableton</button>
         </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title">
-          <div><span class="label">LEGACY SESSION VIEW</span><h2>Scenes</h2></div>
-        </div>
-        <div id="sceneGrid" class="scene-grid"></div>
       </section>
     </section>
 
-    <footer class="footer-note">
-      Songs are saved locally on this Mac. Luma locators are prefixed <code>LL|</code> so sync never intentionally removes your own Ableton locators.
+    <footer class="remote-footer">
+      <span>ARRANGEMENT = SONGS</span>
+      <span>SESSION = SPONTANEOUS</span>
     </footer>
   </main>
 
