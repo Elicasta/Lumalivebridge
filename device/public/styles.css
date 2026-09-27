@@ -89,6 +89,11 @@ textarea {
   line-height: 1.45;
 }
 textarea:focus { border-color: #686e77; box-shadow: 0 0 0 3px rgba(255,255,255,.04); }
+.command-hint {
+  color: #747981;
+  font-size: 11px;
+  margin-top: 8px;
+}
 .actions {
   justify-content: flex-end;
   gap: 10px;
@@ -121,6 +126,41 @@ button:disabled { opacity: .55; cursor: default; }
 }
 .num { color: #73777e; font-variant-numeric: tabular-nums; }
 .notes { margin-top: 12px; color: #9fa3aa; font-size: 13px; line-height: 1.5; }
+.library-list {
+  margin-top: 14px;
+  border-top: 1px solid #2b2e32;
+}
+.library-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 0;
+  border-bottom: 1px solid #2b2e32;
+}
+.library-info {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.library-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.library-info span {
+  color: #8e9299;
+  font-size: 12px;
+}
+.empty-state {
+  margin-top: 14px;
+  border: 1px dashed #363a40;
+  border-radius: 13px;
+  padding: 16px;
+  color: #858a92;
+  font-size: 13px;
+  line-height: 1.5;
+}
 .scene-grid {
   margin-top: 14px;
   display: grid;
@@ -158,4 +198,5 @@ button:disabled { opacity: .55; cursor: default; }
   .session-row { justify-content: space-between; gap: 10px; }
   .card { border-radius: 16px; padding: 15px; }
   button { min-height: 46px; }
+  .library-row { gap: 10px; }
 }
