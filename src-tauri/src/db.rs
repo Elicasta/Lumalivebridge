@@ -233,6 +233,8 @@ impl Database {
             .as_deref()
             .map(slugify)
             .unwrap_or_else(|| slugify(title));
+        let artist = input.artist.clone().unwrap_or_default().trim().to_string();
+        let song_key = input.key.clone().unwrap_or_default().trim().to_string();
         let updated_at = now_ms();
 
         let mut conn = self.conn.lock().map_err(|_| "Database lock failed".to_string())?;
@@ -254,9 +256,9 @@ impl Database {
             params![
                 id,
                 title,
-                input.artist.unwrap_or_default().trim(),
+                artist,
                 input.bpm,
-                input.key.unwrap_or_default().trim(),
+                song_key,
                 input.meter.numerator,
                 input.meter.denominator,
                 input.length_bars,
@@ -282,9 +284,9 @@ impl Database {
         Ok(Song {
             id,
             title: title.to_string(),
-            artist: input.artist.unwrap_or_default(),
+            artist,
             bpm: input.bpm,
-            key: input.key.unwrap_or_default(),
+            key: song_key,
             meter: input.meter,
             length_bars: input.length_bars,
             sections,
