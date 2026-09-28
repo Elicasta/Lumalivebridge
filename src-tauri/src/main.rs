@@ -16,7 +16,7 @@ use crate::pairing::PairingGate;
 use crate::state::AppState;
 use serde_json::{json, Value};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tauri::{Manager, State};
 use uuid::Uuid;
@@ -326,6 +326,147 @@ async fn run_plain_command(state: State<'_, AppState>, text: String) -> Result<V
     }))
 }
 
+#[cfg(target_os = "macos")]
+fn choose_macos_folder(prompt: &str) -> Result<Option<PathBuf>, String> {
+    let script = format!(
+        "POSIX path of (choose folder with prompt {:?})",
+        prompt
+    );
+    let output = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() { Ok(None) } else { Ok(Some(PathBuf::from(value))) }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn choose_macos_folder(_prompt: &str) -> Result<Option<PathBuf>, String> {
+    Err("Folder chooser is currently available on macOS only".into())
+}
+
+#[cfg(target_os = "macos")]
+fn choose_macos_files(prompt: &str) -> Result<Vec<PathBuf>, String> {
+    let script = format!(
+        r#"set chosenFiles to choose file with prompt {:?} with multiple selections allowed
+set outputText to ""
+repeat with chosenFile in chosenFiles
+  set outputText to outputText & (POSIX path of chosenFile) & linefeed
+end repeat
+return outputText"#,
+        prompt
+    );
+    let output = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Ok(Vec::new());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .collect())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn choose_macos_files(_prompt: &str) -> Result<Vec<PathBuf>, String> {
+    Err("File chooser is currently available on macOS only".into())
+}
+
+fn song_by_id(state: &AppState, id: &str) -> Result<Song, String> {
+    state
+        .db
+        .get_song(id)?
+        .ok_or_else(|| "Song not found".to_string())
+}
+
+#[tauri::command]
+fn get_song_package_statuses(state: State<'_, AppState>) -> Result<Value, String> {
+    let root = service_builder::default_root();
+    let mut statuses = Vec::new();
+    for song in state.db.list_songs()? {
+        statuses.push(service_builder::package_status(&root, &song)?);
+    }
+    serde_json::to_value(statuses).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rescan_song_package(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    let root = service_builder::default_root();
+    let song = song_by_id(state.inner(), &id)?;
+    let status = service_builder::package_status(&root, &song)?;
+    serde_json::to_value(status).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn reveal_song_package(state: State<'_, AppState>, id: String) -> Result<String, String> {
+    let root = service_builder::default_root();
+    let song = song_by_id(state.inner(), &id)?;
+    let package = service_builder::ensure_song_package(&root, &song)?;
+    std::process::Command::new("open")
+        .arg(&package)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(package.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn attach_song_project(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    let song = song_by_id(state.inner(), &id)?;
+    let Some(source) = choose_macos_folder("Choose the Ableton Project folder for this song")? else {
+        return Err("Project attachment cancelled".into());
+    };
+    let status = service_builder::adopt_project(&service_builder::default_root(), &song, &source)?;
+    serde_json::to_value(status).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_song_stems(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    let song = song_by_id(state.inner(), &id)?;
+    let files = choose_macos_files("Choose the original stems for this song")?;
+    if files.is_empty() {
+        return Err("Stem import cancelled".into());
+    }
+    let status = service_builder::import_stems(&service_builder::default_root(), &song, &files)?;
+    serde_json::to_value(status).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn run_system_check(state: State<'_, AppState>) -> Result<Value, String> {
+    let root = service_builder::default_root();
+    service_builder::ensure_layout(&root)?;
+
+    let probe = root.join(".luma-write-test");
+    let writable = fs::write(&probe, b"ok").is_ok();
+    let _ = fs::remove_file(&probe);
+    let template = root.join("Templates").join("Church Standard.als");
+
+    let mut packages = Vec::new();
+    for song in state.db.list_songs()? {
+        packages.push(service_builder::package_status(&root, &song)?);
+    }
+
+    let bridge_state = bridge::state().await;
+    let bridge_connected = bridge_state.is_ok();
+    let bridge_error = bridge_state.err();
+
+    Ok(json!({
+        "libraryRoot": root.to_string_lossy().to_string(),
+        "libraryWritable": writable,
+        "templateExists": template.exists(),
+        "bridgeConnected": bridge_connected,
+        "bridgeError": bridge_error,
+        "songCount": packages.len(),
+        "packages": packages
+    }))
+}
+
 #[tauri::command]
 fn reveal_library_root() -> Result<String, String> {
     let root = service_builder::default_root();
@@ -411,7 +552,8 @@ async fn build_service(
                         "track": { "name": placement.track },
                         "filePath": placement.collected_path,
                         "position": placement.start_beat,
-                        "name": placement.clip_name
+                        "name": placement.clip_name,
+                        "transposeSemitones": placement.transpose_semitones
                     }),
                 )
                 .await?;
@@ -580,6 +722,12 @@ fn main() {
             preview_plain_command,
             run_plain_command,
             reveal_library_root,
+            get_song_package_statuses,
+            rescan_song_package,
+            reveal_song_package,
+            attach_song_project,
+            import_song_stems,
+            run_system_check,
             build_service
         ])
         .run(context);
