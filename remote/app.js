@@ -19,7 +19,9 @@
     pendingCommandText: null,
     sectionSignature: "",
     mixerSignature: "",
-    buskSignature: ""
+    buskSignature: "",
+    performSceneSignature: "",
+    serviceSignature: ""
   };
   const volumeTimers = new Map();
 
@@ -147,6 +149,77 @@
     return (state.arrangement.songs || []).find(song => song.instanceId === ctx.instanceId) || null;
   }
 
+  function renderServicePicker() {
+    const signature = state.setlists
+      .map(item => item.id + ":" + item.title + ":" + item.items.length)
+      .join("|") + "|active:" + (state.activeSetlistId || "");
+
+    const select = $("serviceSelect");
+    if (signature !== state.serviceSignature) {
+      state.serviceSignature = signature;
+      const previous = select.value;
+      select.innerHTML = "";
+
+      if (!state.setlists.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "No saved services";
+        select.appendChild(option);
+      } else {
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Choose a service…";
+        select.appendChild(placeholder);
+
+        state.setlists.forEach(setlist => {
+          const option = document.createElement("option");
+          option.value = setlist.id;
+          option.textContent = setlist.title + " · " + setlist.items.length + " song" + (setlist.items.length === 1 ? "" : "s");
+          select.appendChild(option);
+        });
+      }
+
+      select.value = state.activeSetlistId || (state.setlists.some(item => item.id === previous) ? previous : "");
+    }
+
+    const selected = select.value;
+    $("serviceLoadBtn").disabled = !selected;
+    $("serviceLoadBtn").textContent = selected && selected === state.activeSetlistId ? "Resync Service" : "Load Service";
+    $("serviceHelp").textContent = state.setlists.length
+      ? (state.activeSetlistId
+          ? "Active service is synced from the Luma Live library. Choose another service any time."
+          : "Choose a saved service and Luma Live will sync its song and section locators into Ableton.")
+      : "Create at least one setlist in the Mac app, then it will appear here automatically.";
+  }
+
+  async function syncSetlist(id) {
+    if (!id) return;
+    $("serviceLoadBtn").disabled = true;
+    $("serviceLoadBtn").textContent = "Syncing…";
+    showError("");
+    try {
+      const data = await api("/api/setlists/" + encodeURIComponent(id) + "/sync", {
+        method: "POST",
+        body: {}
+      });
+      if (data.arrangement) state.arrangement = data.arrangement;
+      if (data.state) state.live = data.state;
+      if (data.library) setLibrary(data.library);
+      else {
+        state.activeSetlistId = id;
+        await refreshLibrary();
+      }
+      renderAll();
+      showNotice(data.syncError
+        ? "Service loaded locally. Ableton locator sync is still pending."
+        : "Service loaded and synced to Ableton.");
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      renderServicePicker();
+    }
+  }
+
   function placementByInstance(id) {
     if (!state.arrangement) return null;
     return (state.arrangement.songs || []).find(song => song.instanceId === id) || null;
@@ -256,24 +329,39 @@
     const scenes = Array.isArray(state.live.scenes) ? state.live.scenes : [];
     $("sceneCount").textContent = scenes.length + " scene" + (scenes.length === 1 ? "" : "s");
     const host = $("performScenes");
-    host.innerHTML = "";
+    const signature = scenes.map((scene, index) => [
+      scene.index,
+      scene.number || index + 1,
+      scene.name || "",
+      scene.tempoEnabled ? 1 : 0,
+      Number(scene.tempo) || 0
+    ].join(":")).join("|");
 
-    scenes.forEach((scene, index) => {
-      const button = document.createElement("button");
-      const active = Number(scene.index) === Number(state.live.activeSceneIndex);
-      button.className = "perform-scene" + (active ? " active" : "");
-      button.innerHTML =
-        '<span>' + String((scene.number || index + 1)).padStart(2, "0") + '</span>' +
-        '<strong>' + escapeHtml(sceneLabel(scene, index)) + '</strong>' +
-        '<small>' + (scene.tempoEnabled && Number(scene.tempo) > 0 ? Math.round(Number(scene.tempo) * 10) / 10 + " BPM" : "") + '</small>';
-      button.addEventListener("click", () => direct({
-        type: "fire_scene",
-        args: { scene: { index: Number(scene.index) } }
-      }).catch(error => showError(error.message)));
-      host.appendChild(button);
+    if (signature !== state.performSceneSignature) {
+      state.performSceneSignature = signature;
+      host.innerHTML = "";
+
+      scenes.forEach((scene, index) => {
+        const button = document.createElement("button");
+        button.className = "perform-scene";
+        button.dataset.sceneIndex = scene.index;
+        button.innerHTML =
+          '<span>' + String((scene.number || index + 1)).padStart(2, "0") + '</span>' +
+          '<strong>' + escapeHtml(sceneLabel(scene, index)) + '</strong>' +
+          '<small>' + (scene.tempoEnabled && Number(scene.tempo) > 0 ? Math.round(Number(scene.tempo) * 10) / 10 + " BPM" : "") + '</small>';
+        button.addEventListener("click", () => direct({
+          type: "fire_scene",
+          args: { scene: { index: Number(scene.index) } }
+        }).catch(error => showError(error.message)));
+        host.appendChild(button);
+      });
+
+      if (!scenes.length) host.innerHTML = '<div class="empty">No Session View scenes available.</div>';
+    }
+
+    host.querySelectorAll(".perform-scene").forEach(button => {
+      button.classList.toggle("active", Number(button.dataset.sceneIndex) === Number(state.live.activeSceneIndex));
     });
-
-    if (!scenes.length) host.innerHTML = '<div class="empty">No Session View scenes available.</div>';
   }
 
   function renderArrangement() {
@@ -500,6 +588,7 @@
   function renderPerform() {
     renderCurrentScene();
     renderPerformScenes();
+    renderServicePicker();
     renderArrangement();
     renderMixer();
   }
@@ -612,6 +701,9 @@
     const target = scenes[Math.min(scenes.length - 1, current >= 0 ? current + 1 : 0)];
     if (target) direct({ type: "fire_scene", args: { scene: { index: Number(target.index) } } }).catch(error => showError(error.message));
   });
+
+  $("serviceSelect").addEventListener("change", renderServicePicker);
+  $("serviceLoadBtn").addEventListener("click", () => syncSetlist($("serviceSelect").value));
 
   $("previousSectionBtn").addEventListener("click", () => jumpAdjacentSection(-1));
   $("nextSectionBtn").addEventListener("click", () => jumpAdjacentSection(1));
