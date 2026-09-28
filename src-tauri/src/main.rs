@@ -521,6 +521,40 @@ async fn build_service(
     let songs = state.db.list_songs()?;
     let arrangement = build_arrangement(&setlist, &songs)?;
     let root = service_builder::default_root();
+
+    // A service build is a collected snapshot, so do not silently create a
+    // "successful" service from song records that have no actual show files.
+    let song_map: std::collections::HashMap<&str, &crate::models::Song> =
+        songs.iter().map(|song| (song.id.as_str(), song)).collect();
+    let mut package_blockers = Vec::new();
+    let mut checked = std::collections::HashSet::new();
+    for item in &setlist.items {
+        if !checked.insert(item.song_id.clone()) {
+            continue;
+        }
+        let song = song_map
+            .get(item.song_id.as_str())
+            .copied()
+            .ok_or_else(|| format!("Song {} is missing from the library", item.song_id))?;
+        let status = service_builder::package_status(&root, song)?;
+        let mut missing = Vec::new();
+        if status.source_als.is_none() {
+            missing.push("Ableton Project/.als");
+        }
+        if status.stem_count == 0 {
+            missing.push("original stems");
+        }
+        if !missing.is_empty() {
+            package_blockers.push(format!("{}: {}", song.title, missing.join(" + ")));
+        }
+    }
+    if !package_blockers.is_empty() {
+        return Err(format!(
+            "Service build stopped. Finish these song packages first: {}",
+            package_blockers.join(" · ")
+        ));
+    }
+
     let result = service_builder::build_service_folder(
         &root,
         &setlist,
