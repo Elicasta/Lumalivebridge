@@ -251,3 +251,79 @@ pub fn jump_target<'a>(
         Ok((song.start_beat, song))
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Section, SetlistItem};
+
+    fn song(id: &str, title: &str, meter: Meter, length_bars: i64) -> Song {
+        Song {
+            id: id.into(),
+            title: title.into(),
+            artist: String::new(),
+            bpm: 72.0,
+            key: String::new(),
+            meter,
+            length_bars,
+            sections: vec![
+                Section { id: "intro".into(), name: "Intro".into(), start_bar: 1 },
+                Section { id: "chorus".into(), name: "Chorus".into(), start_bar: 5 },
+            ],
+            updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn six_eight_uses_three_quarter_note_beats_per_bar() {
+        let songs = vec![song(
+            "six-eight",
+            "Six Eight",
+            Meter { numerator: 6, denominator: 8 },
+            8,
+        )];
+        let setlist = Setlist {
+            id: "service".into(),
+            title: "Service".into(),
+            gap_bars: 0,
+            items: vec![SetlistItem { id: "instance-a".into(), song_id: "six-eight".into() }],
+            updated_at: 0,
+        };
+
+        let arrangement = build_arrangement(&setlist, &songs).unwrap();
+        assert_eq!(arrangement.songs[0].end_beat, 24.0);
+        assert_eq!(arrangement.songs[0].sections[1].start_beat, 12.0);
+
+        let context = locate_position(&arrangement, 5.0).unwrap();
+        assert_eq!(context.current_bar, 2);
+        assert_eq!(context.beat_in_bar, 5);
+    }
+
+    #[test]
+    fn repeated_song_instances_have_distinct_jump_targets() {
+        let songs = vec![song(
+            "same-song",
+            "Same Song",
+            Meter { numerator: 4, denominator: 4 },
+            8,
+        )];
+        let setlist = Setlist {
+            id: "service".into(),
+            title: "Service".into(),
+            gap_bars: 1,
+            items: vec![
+                SetlistItem { id: "first".into(), song_id: "same-song".into() },
+                SetlistItem { id: "second".into(), song_id: "same-song".into() },
+            ],
+            updated_at: 0,
+        };
+
+        let arrangement = build_arrangement(&setlist, &songs).unwrap();
+        let (first, _) = jump_target(&arrangement, Some("same-song"), Some("first"), Some("chorus")).unwrap();
+        let (second, _) = jump_target(&arrangement, Some("same-song"), Some("second"), Some("chorus")).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(first, 16.0);
+        assert_eq!(second, 52.0);
+    }
+}
