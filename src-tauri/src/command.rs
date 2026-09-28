@@ -1079,6 +1079,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn preview_accepts_keyed_song_creation_and_setlist_prefix() {
+        let state = test_state();
+
+        let song_preview = preview(
+            &state,
+            "create song Gratitude at 68 bpm in B with Intro 8 bars, Verse 8 bars, Chorus 8 bars",
+        )
+        .await
+        .unwrap();
+        assert_eq!(song_preview["kind"], "create_song");
+        assert!(song_preview["summary"].as_str().unwrap().contains("in B"));
+        assert!(state.db.list_songs().unwrap().is_empty());
+
+        let song = state
+            .db
+            .save_song(SongInput {
+                id: None,
+                title: "Gratitude".into(),
+                artist: None,
+                bpm: 68.0,
+                key: Some("B".into()),
+                meter: Meter::default(),
+                length_bars: 32,
+                sections: vec![SectionInput { id: None, name: "Intro".into(), start_bar: 1 }],
+            })
+            .unwrap();
+
+        state
+            .db
+            .save_setlist(SetlistInput {
+                id: None,
+                title: "Sunday AM".into(),
+                gap_bars: 4,
+                items: vec![SetlistItemInput { id: None, song_id: song.id }],
+            })
+            .unwrap();
+
+        let setlist_preview = preview(&state, "load setlist Sunday AM").await.unwrap();
+        assert_eq!(setlist_preview["kind"], "load_setlist");
+    }
+
+    #[tokio::test]
     async fn preview_named_song_section_move_resolves_without_mutating() {
         let state = test_state();
         state
