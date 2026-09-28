@@ -135,15 +135,32 @@ async fn sync_setlist(state: &AppState, setlist_id: &str) -> Result<Value, Strin
         .map(|marker| json!({ "time": marker.time, "name": marker.name }))
         .collect();
 
-    bridge::send(
+    state.db.set_active_setlist_id(Some(&setlist.id))?;
+
+    let sync_result = bridge::send(
         "sync_cue_points",
         json!({ "replace": true, "points": points }),
     )
-    .await?;
-    state.db.set_active_setlist_id(Some(&setlist.id))?;
+    .await;
+
+    let (summary, bridge_connected, sync_error) = match sync_result {
+        Ok(_) => (
+            format!("Loaded {} and synced its Arrangement locators to Ableton", setlist.title),
+            true,
+            None,
+        ),
+        Err(error) => (
+            format!("Loaded {} locally. Ableton sync is pending.", setlist.title),
+            false,
+            Some(error),
+        ),
+    };
+
     Ok(json!({
-        "summary": format!("Loaded {} into Ableton", setlist.title),
-        "activeSetlistId": setlist.id
+        "summary": summary,
+        "activeSetlistId": setlist.id,
+        "bridgeConnected": bridge_connected,
+        "syncError": sync_error
     }))
 }
 
@@ -490,7 +507,7 @@ pub async fn preview(state: &AppState, text: &str) -> Result<Value, String> {
         return Ok(preview_value(
             raw,
             "load_setlist",
-            format!("Sync {} to Ableton and make it the active service", setlist.title),
+            format!("Make {} the active service and sync its locators to Ableton if connected", setlist.title),
             true,
             true,
         ));
