@@ -9,6 +9,71 @@ pub struct ArrangementSection {
     pub name: String,
     pub local_start_bar: i64,
     pub start_beat: f64,
+    #[test]
+    fn segue_places_next_song_on_the_same_downbeat() {
+        let songs = vec![
+            song("a", "A", Meter { numerator: 4, denominator: 4 }, 8),
+            song("b", "B", Meter { numerator: 4, denominator: 4 }, 8),
+        ];
+        let setlist = Setlist {
+            id: "service".into(),
+            title: "Service".into(),
+            gap_bars: 4,
+            items: vec![
+                SetlistItem {
+                    id: "a1".into(),
+                    song_id: "a".into(),
+                    transition: crate::models::TransitionSpec {
+                        mode: "segue".into(),
+                        bars: 0,
+                        vamp_section_id: None,
+                    },
+                },
+                SetlistItem {
+                    id: "b1".into(),
+                    song_id: "b".into(),
+                    transition: crate::models::TransitionSpec::default(),
+                },
+            ],
+            updated_at: 0,
+        };
+
+        let arrangement = build_arrangement(&setlist, &songs).unwrap();
+        assert_eq!(arrangement.songs[0].end_beat, arrangement.songs[1].start_beat);
+        assert_eq!(arrangement.transitions[0].mode, "segue");
+    }
+
+    #[test]
+    fn mashup_overlap_requires_matching_tempo_and_meter() {
+        let mut first = song("a", "A", Meter { numerator: 4, denominator: 4 }, 8);
+        first.bpm = 72.0;
+        let mut second = song("b", "B", Meter { numerator: 4, denominator: 4 }, 8);
+        second.bpm = 80.0;
+        let setlist = Setlist {
+            id: "service".into(),
+            title: "Service".into(),
+            gap_bars: 0,
+            items: vec![
+                SetlistItem {
+                    id: "a1".into(),
+                    song_id: "a".into(),
+                    transition: crate::models::TransitionSpec {
+                        mode: "mashup".into(),
+                        bars: 2,
+                        vamp_section_id: None,
+                    },
+                },
+                SetlistItem {
+                    id: "b1".into(),
+                    song_id: "b".into(),
+                    transition: crate::models::TransitionSpec::default(),
+                },
+            ],
+            updated_at: 0,
+        };
+
+        assert!(build_arrangement(&setlist, &[first, second]).is_err());
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,6 +103,20 @@ pub struct ArrangementMarker {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ArrangementTransition {
+    pub from_instance_id: String,
+    pub to_instance_id: Option<String>,
+    pub mode: String,
+    pub bars: i64,
+    pub trigger_beat: f64,
+    pub next_start_beat: Option<f64>,
+    pub vamp_section_id: Option<String>,
+    pub vamp_start_beat: Option<f64>,
+    pub vamp_end_beat: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Arrangement {
     pub schema_version: i64,
     pub setlist_id: String,
@@ -46,6 +125,7 @@ pub struct Arrangement {
     pub end_beat: f64,
     pub songs: Vec<ArrangementSong>,
     pub markers: Vec<ArrangementMarker>,
+    pub transitions: Vec<ArrangementTransition>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -82,8 +162,9 @@ pub fn build_arrangement(setlist: &Setlist, songs: &[Song]) -> Result<Arrangemen
     let mut cursor = 0.0f64;
     let mut placed_songs = Vec::new();
     let mut markers = Vec::new();
+    let mut transitions = Vec::new();
 
-    for item in &setlist.items {
+    for (item_index, item) in setlist.items.iter().enumerate() {
         let song = map
             .get(item.song_id.as_str())
             .copied()
@@ -92,10 +173,12 @@ pub fn build_arrangement(setlist: &Setlist, songs: &[Song]) -> Result<Arrangemen
         let denominator = song.meter.denominator.max(1) as f64;
         let beats_per_bar = song.meter.numerator.max(1) as f64 * (4.0 / denominator);
         let length_beats = song.length_bars as f64 * beats_per_bar;
+        let song_start = cursor;
+        let end_beat = song_start + length_beats;
         let mut sections = Vec::new();
 
         markers.push(ArrangementMarker {
-            time: cursor,
+            time: song_start,
             name: format!("LL|SONG|{}|{}", song.id, song.title),
             kind: "song".into(),
             song_id: song.id.clone(),
@@ -103,7 +186,7 @@ pub fn build_arrangement(setlist: &Setlist, songs: &[Song]) -> Result<Arrangemen
         });
 
         for section in &song.sections {
-            let start_beat = cursor + ((section.start_bar - 1).max(0) as f64 * beats_per_bar);
+            let start_beat = song_start + ((section.start_bar - 1).max(0) as f64 * beats_per_bar);
             sections.push(ArrangementSection {
                 id: section.id.clone(),
                 name: section.name.clone(),
@@ -122,7 +205,6 @@ pub fn build_arrangement(setlist: &Setlist, songs: &[Song]) -> Result<Arrangemen
             });
         }
 
-        let end_beat = cursor + length_beats;
         placed_songs.push(ArrangementSong {
             instance_id: item.id.clone(),
             song_id: song.id.clone(),
@@ -131,22 +213,131 @@ pub fn build_arrangement(setlist: &Setlist, songs: &[Song]) -> Result<Arrangemen
             bpm: song.bpm,
             key: song.key.clone(),
             meter: song.meter.clone(),
-            start_beat: cursor,
+            start_beat: song_start,
             end_beat,
-            sections,
+            sections: sections.clone(),
         });
 
-        cursor = end_beat + (setlist.gap_bars.max(0) as f64 * beats_per_bar);
+        let next_item = setlist.items.get(item_index + 1);
+        if let Some(next_item) = next_item {
+            let next_song = map
+                .get(next_item.song_id.as_str())
+                .copied()
+                .ok_or_else(|| format!("Missing song \"{}\"", next_item.song_id))?;
+
+            let mode = item.transition.mode.as_str();
+            let bars = item.transition.bars.max(0);
+            let mut next_start = end_beat;
+            let mut vamp_start = None;
+            let mut vamp_end = None;
+
+            match mode {
+                "inherit" => {
+                    next_start = end_beat + setlist.gap_bars.max(0) as f64 * beats_per_bar;
+                }
+                "gap" => {
+                    next_start = end_beat + bars as f64 * beats_per_bar;
+                }
+                "segue" | "hold" => {
+                    next_start = end_beat;
+                }
+                "vamp" => {
+                    next_start = end_beat;
+                    let requested = item
+                        .transition
+                        .vamp_section_id
+                        .as_deref()
+                        .ok_or_else(|| format!("{} needs a vamp section", song.title))?;
+                    let section_index = sections
+                        .iter()
+                        .position(|section| section.id == requested)
+                        .ok_or_else(|| format!("Vamp section {} is missing from {}", requested, song.title))?;
+                    vamp_start = Some(sections[section_index].start_beat);
+                    vamp_end = Some(
+                        sections
+                            .get(section_index + 1)
+                            .map(|section| section.start_beat)
+                            .unwrap_or(end_beat),
+                    );
+                    if vamp_end.unwrap_or(end_beat) <= vamp_start.unwrap_or(song_start) {
+                        return Err(format!("Vamp section {} has no playable length", requested));
+                    }
+                }
+                "mashup" => {
+                    if (song.bpm - next_song.bpm).abs() > 0.01
+                        || song.meter.numerator != next_song.meter.numerator
+                        || song.meter.denominator != next_song.meter.denominator
+                    {
+                        return Err(format!(
+                            "Mashup overlap from {} to {} requires matching BPM and meter. Warp or pre-render the transition first.",
+                            song.title, next_song.title
+                        ));
+                    }
+                    let overlap = bars as f64 * beats_per_bar;
+                    if overlap >= length_beats {
+                        return Err(format!("Mashup overlap is longer than {}", song.title));
+                    }
+                    next_start = end_beat - overlap;
+                }
+                other => {
+                    return Err(format!("Unsupported transition mode: {other}"));
+                }
+            }
+
+            markers.push(ArrangementMarker {
+                time: end_beat,
+                name: format!(
+                    "LL|TRANSITION|{}|{}|{}",
+                    item.id, next_item.id, item.transition.mode
+                ),
+                kind: "transition".into(),
+                song_id: song.id.clone(),
+                section_id: None,
+            });
+
+            transitions.push(ArrangementTransition {
+                from_instance_id: item.id.clone(),
+                to_instance_id: Some(next_item.id.clone()),
+                mode: item.transition.mode.clone(),
+                bars,
+                trigger_beat: end_beat,
+                next_start_beat: Some(next_start),
+                vamp_section_id: item.transition.vamp_section_id.clone(),
+                vamp_start_beat: vamp_start,
+                vamp_end_beat: vamp_end,
+            });
+
+            cursor = next_start;
+        } else {
+            cursor = end_beat;
+            transitions.push(ArrangementTransition {
+                from_instance_id: item.id.clone(),
+                to_instance_id: None,
+                mode: "end".into(),
+                bars: 0,
+                trigger_beat: end_beat,
+                next_start_beat: None,
+                vamp_section_id: None,
+                vamp_start_beat: None,
+                vamp_end_beat: None,
+            });
+        }
     }
 
+    let arrangement_end = placed_songs
+        .iter()
+        .map(|song| song.end_beat)
+        .fold(cursor, f64::max);
+
     Ok(Arrangement {
-        schema_version: 1,
+        schema_version: 2,
         setlist_id: setlist.id.clone(),
         title: setlist.title.clone(),
         start_beat: 0.0,
-        end_beat: cursor,
+        end_beat: arrangement_end,
         songs: placed_songs,
         markers,
+        transitions,
     })
 }
 
@@ -287,7 +478,7 @@ mod tests {
             id: "service".into(),
             title: "Service".into(),
             gap_bars: 0,
-            items: vec![SetlistItem { id: "instance-a".into(), song_id: "six-eight".into() }],
+            items: vec![SetlistItem { id: "instance-a".into(), song_id: "six-eight".into(), transition: crate::models::TransitionSpec::default() }],
             updated_at: 0,
         };
 
@@ -313,8 +504,8 @@ mod tests {
             title: "Service".into(),
             gap_bars: 1,
             items: vec![
-                SetlistItem { id: "first".into(), song_id: "same-song".into() },
-                SetlistItem { id: "second".into(), song_id: "same-song".into() },
+                SetlistItem { id: "first".into(), song_id: "same-song".into(), transition: crate::models::TransitionSpec::default() },
+                SetlistItem { id: "second".into(), song_id: "same-song".into(), transition: crate::models::TransitionSpec::default() },
             ],
             updated_at: 0,
         };
