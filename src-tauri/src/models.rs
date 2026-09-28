@@ -97,6 +97,7 @@ pub struct Setlist {
 pub struct LibraryPayload {
     pub songs: Vec<Song>,
     pub setlists: Vec<Setlist>,
+    pub active_setlist_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
