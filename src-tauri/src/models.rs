@@ -127,6 +127,7 @@ pub struct RuntimeInfo {
     pub port: Option<u16>,
     pub local_urls: Vec<String>,
     pub database_path: String,
+    pub library_root: String,
     pub offline_ready: bool,
     pub startup_warning: Option<String>,
 }
