@@ -233,19 +233,26 @@ pub fn plan(
     let jump = Regex::new(r"(?i)^(?:go|jump|take\s+me)\s+(?:to\s+)?(.+?)(?:\s+in\s+(.+))?$").unwrap();
     if let Some(caps) = jump.captures(input) {
         let section_name = caps[1].trim();
-        let song = if let Some(song_name) = caps.get(2) {
-            exactish(&library.songs, song_name.as_str().trim(), |item| item.title.as_str())
+        let (song, instance_id) = if let Some(song_name) = caps.get(2) {
+            (
+                exactish(&library.songs, song_name.as_str().trim(), |item| item.title.as_str()),
+                None,
+            )
         } else if let Some(ctx) = live_context {
-            library.songs.iter().find(|song| song.id == ctx.song_id)
+            (
+                library.songs.iter().find(|song| song.id == ctx.song_id),
+                Some(ctx.instance_id.clone()),
+            )
         } else {
-            None
-        }.ok_or_else(|| "Load a service or name the song, for example: go to Chorus in Gratitude.".to_string())?;
+            (None, None)
+        };
+        let song = song.ok_or_else(|| "Load a service or name the song, for example: go to Chorus in Gratitude.".to_string())?;
         let section = exactish(&song.sections, section_name, |item| item.name.as_str())
             .ok_or_else(|| format!("I could not find section {section_name} in {}", song.title))?;
         steps.push(step(
             "jump_section",
             format!("Jump to {} / {}", song.title, section.name),
-            json!({"songId":song.id,"sectionId":section.id}),
+            json!({"songId":song.id,"instanceId":instance_id,"sectionId":section.id}),
         ));
         return Ok(PlainPlan { id: Uuid::new_v4().to_string(), title: "Jump section".into(), text: input.into(), steps, notes });
     }
