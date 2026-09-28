@@ -20,6 +20,7 @@ pub struct ArrangementSong {
     pub artist: String,
     pub bpm: f64,
     pub key: String,
+    pub transpose_semitones: i64,
     pub meter: Meter,
     pub start_beat: f64,
     pub end_beat: f64,
@@ -151,6 +152,7 @@ pub fn build_arrangement(setlist: &Setlist, songs: &[Song]) -> Result<Arrangemen
             artist: song.artist.clone(),
             bpm: song.bpm,
             key: song.key.clone(),
+            transpose_semitones: item.transpose_semitones,
             meter: song.meter.clone(),
             start_beat: song_start,
             end_beat,
@@ -414,6 +416,7 @@ mod tests {
             id: id.into(),
             song_id: song_id.into(),
             transition,
+            transpose_semitones: 0,
         }
     }
 
