@@ -119,6 +119,14 @@ fn active_arrangement(state: &AppState) -> Result<Option<Arrangement>, String> {
     build_arrangement(&setlist, &songs).map(Some)
 }
 
+fn local_offline_live_state(state: &AppState) -> Result<Value, String> {
+    Ok(json!({
+        "bridgeConnected": false,
+        "activeSetlistId": state.db.get_active_setlist_id()?,
+        "liveContext": Value::Null
+    }))
+}
+
 async fn enriched_live_state(state: &AppState) -> Result<Value, String> {
     let raw = bridge::state().await;
     let bridge_connected = raw.is_ok();
@@ -180,9 +188,15 @@ async fn sync_live_setlist(state: State<'_, AppState>, id: String) -> Result<Val
     let bridge_connected = sync_result.is_ok();
     let sync_error = sync_result.err();
 
+    let live_state = if bridge_connected {
+        enriched_live_state(&state).await?
+    } else {
+        local_offline_live_state(&state)?
+    };
+
     Ok(json!({
         "arrangement": arrangement,
-        "state": enriched_live_state(&state).await?,
+        "state": live_state,
         "bridgeConnected": bridge_connected,
         "syncError": sync_error
     }))
@@ -228,9 +242,15 @@ async fn preview_plain_command(state: State<'_, AppState>, text: String) -> Resu
 async fn run_plain_command(state: State<'_, AppState>, text: String) -> Result<Value, String> {
     let state = state.inner().clone();
     let result = command::execute(&state, &text).await?;
+    let known_offline = result.get("bridgeConnected").and_then(Value::as_bool) == Some(false);
+    let live_state = if known_offline {
+        local_offline_live_state(&state)?
+    } else {
+        enriched_live_state(&state).await?
+    };
     Ok(json!({
         "result": result,
-        "state": enriched_live_state(&state).await?,
+        "state": live_state,
         "library": state.db.library()?,
         "activeSetlistId": state.db.get_active_setlist_id()?,
         "arrangement": active_arrangement(&state)?
