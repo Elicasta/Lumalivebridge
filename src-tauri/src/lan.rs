@@ -119,6 +119,14 @@ fn library_value(state: &AppState, bridge_connected: bool) -> Result<Value, Stri
     }))
 }
 
+fn local_offline_live_state(state: &AppState) -> Result<Value, String> {
+    Ok(json!({
+        "bridgeConnected": false,
+        "activeSetlistId": state.db.get_active_setlist_id()?,
+        "liveContext": Value::Null
+    }))
+}
+
 async fn enriched_live_state(state: &AppState) -> Result<Value, String> {
     let raw = bridge::state().await;
     let bridge_connected = raw.is_ok();
@@ -298,9 +306,14 @@ async fn sync_setlist(
     let bridge_connected = sync_result.is_ok();
     let sync_error = sync_result.err();
 
-    let live = enriched_live_state(&state)
-        .await
-        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+    let live = if bridge_connected {
+        enriched_live_state(&state)
+            .await
+            .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?
+    } else {
+        local_offline_live_state(&state)
+            .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?
+    };
     let library = library_value(&state, bridge_connected)
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
 
@@ -388,8 +401,16 @@ async fn plain_command(
     let result = command::execute(&state, &input.text)
         .await
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
-    let live = enriched_live_state(&state).await.unwrap_or_else(|_| json!({ "bridgeConnected": false }));
-    let library = library_value(&state, bridge::health().await)
+    let known_offline = result.get("bridgeConnected").and_then(Value::as_bool) == Some(false);
+    let live = if known_offline {
+        local_offline_live_state(&state)
+            .unwrap_or_else(|_| json!({ "bridgeConnected": false }))
+    } else {
+        enriched_live_state(&state)
+            .await
+            .unwrap_or_else(|_| json!({ "bridgeConnected": false }))
+    };
+    let library = library_value(&state, if known_offline { false } else { bridge::health().await })
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
     Ok(Json(json!({
         "ok": true,
