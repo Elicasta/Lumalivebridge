@@ -5,23 +5,21 @@
   const incoming = params.get("token");
   if (incoming) {
     localStorage.setItem("lumaLiveToken", incoming);
-    try {
-      history.replaceState({}, "", location.pathname);
-    } catch (_) {}
+    try { history.replaceState({}, "", location.pathname); } catch (_) {}
   }
   let token = incoming || localStorage.getItem("lumaLiveToken") || "";
 
   const $ = (id) => document.getElementById(id);
   const state = {
-    live: null,
+    live: {},
     songs: [],
     setlists: [],
     activeSetlistId: null,
     arrangement: null,
     pendingCommandText: null,
-    mixerSignature: "",
     sectionSignature: "",
-    sceneSignature: ""
+    mixerSignature: "",
+    buskSignature: ""
   };
   const volumeTimers = new Map();
 
@@ -31,13 +29,6 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
-  }
-
-  function setStatus(macOnline, bridgeOnline) {
-    $("status").textContent = macOnline ? "MAC CONNECTED" : "MAC OFFLINE";
-    $("status").className = "status " + (macOnline ? "online" : "offline");
-    $("bridgeStatus").textContent = bridgeOnline ? "ABLETON CONNECTED" : "ABLETON OFFLINE";
-    $("bridgeStatus").className = "status " + (bridgeOnline ? "bridge-online" : "bridge-offline");
   }
 
   function showError(message) {
@@ -50,18 +41,21 @@
     $("notice").hidden = !message;
     if (message) {
       clearTimeout(showNotice.timer);
-      showNotice.timer = setTimeout(() => {
-        $("notice").hidden = true;
-      }, 2600);
+      showNotice.timer = setTimeout(() => $("notice").hidden = true, 2400);
     }
+  }
+
+  function setStatus(macOnline, bridgeOnline) {
+    $("status").textContent = macOnline ? "MAC CONNECTED" : "MAC OFFLINE";
+    $("status").className = "status " + (macOnline ? "online" : "offline");
+    $("bridgeStatus").textContent = bridgeOnline ? "ABLETON CONNECTED" : "ABLETON OFFLINE";
+    $("bridgeStatus").className = "status " + (bridgeOnline ? "bridge-online" : "bridge-offline");
   }
 
   function setPairingVisible(visible) {
     $("pairingScreen").hidden = !visible;
     $("remoteShell").classList.toggle("pairing-locked", visible);
-    if (visible) {
-      setTimeout(() => $("pairingCodeInput").focus(), 80);
-    }
+    if (visible) setTimeout(() => $("pairingCodeInput").focus(), 80);
   }
 
   function pairingError(message) {
@@ -92,10 +86,7 @@
         cache: "no-store"
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || "Pairing failed");
-      }
-
+      if (!response.ok) throw new Error(data.error || "Pairing failed");
       token = data.token || "";
       if (!token) throw new Error("The Mac did not return a device token.");
       localStorage.setItem("lumaLiveToken", token);
@@ -112,9 +103,7 @@
   }
 
   async function api(path, options = {}) {
-    if (!token) {
-      throw new Error("Open the remote using the full link shown in Luma Live on the Mac.");
-    }
+    if (!token) throw new Error("Pair this iPad with Luma Live first.");
     const response = await fetch(path, {
       method: options.method || "GET",
       headers: {
@@ -145,329 +134,64 @@
     const source = payload && payload.library && Array.isArray(payload.library.songs)
       ? payload.library
       : payload || {};
-
     state.songs = Array.isArray(source.songs) ? source.songs : state.songs;
     state.setlists = Array.isArray(source.setlists) ? source.setlists : state.setlists;
     if ("activeSetlistId" in source) state.activeSetlistId = source.activeSetlistId;
     if ("arrangement" in source) state.arrangement = source.arrangement;
-    renderLibrary();
-    renderSetlists();
-    renderLive();
-  }
-
-  function activeSetlist() {
-    return state.setlists.find((item) => item.id === state.activeSetlistId) || null;
+    renderPerform();
   }
 
   function currentPlacement() {
     const ctx = state.live && state.live.liveContext;
     if (!ctx || !state.arrangement) return null;
-    return (state.arrangement.songs || []).find((song) => song.instanceId === ctx.instanceId) || null;
+    return (state.arrangement.songs || []).find(song => song.instanceId === ctx.instanceId) || null;
   }
 
   function placementByInstance(id) {
     if (!state.arrangement) return null;
-    return (state.arrangement.songs || []).find((song) => song.instanceId === id) || null;
+    return (state.arrangement.songs || []).find(song => song.instanceId === id) || null;
   }
 
-  function renderTransport() {
-    const live = state.live || {};
-    const ctx = live.liveContext;
-
-    $("playBtn").classList.toggle("active", !!live.isPlaying);
-    $("playLabel").textContent = live.isPlaying ? "PLAYING" : "PLAY";
-    $("clickBtn").classList.toggle("active", !!live.metronome);
-    $("tempo").textContent = Number.isFinite(live.tempo) ? Math.round(live.tempo * 10) / 10 : "--";
-    $("meter").textContent = live.meter
-      ? live.meter.numerator + "/" + live.meter.denominator
-      : "--";
-    $("barReadout").textContent = ctx && Number.isFinite(ctx.currentBar)
-      ? ctx.currentBar + "." + (ctx.beatInBar || 1)
-      : "--";
+  function activeScene() {
+    const scenes = Array.isArray(state.live.scenes) ? state.live.scenes : [];
+    return scenes.find(scene => Number(scene.index) === Number(state.live.activeSceneIndex)) || null;
   }
 
-  function renderSections(placement, ctx) {
-    const sections = placement ? placement.sections || [] : [];
-    const signature = placement
-      ? placement.instanceId + "|" + sections.map((section) => section.id + ":" + section.name + ":" + section.localStartBar).join("|")
-      : "";
-
-    if (signature !== state.sectionSignature) {
-      state.sectionSignature = signature;
-      $("sectionGrid").innerHTML = "";
-      sections.forEach((section, index) => {
-        const button = document.createElement("button");
-        button.className = "section-btn";
-        button.dataset.sectionId = section.id;
-        button.innerHTML =
-          '<span>' + String(index + 1).padStart(2, "0") + '</span>' +
-          '<strong>' + escapeHtml(section.name) + '</strong>' +
-          '<small>Bar ' + section.localStartBar + '</small>';
-        button.addEventListener("click", () => jumpTo(placement, section.id));
-        $("sectionGrid").appendChild(button);
-      });
-    }
-
-    $("sectionGrid").querySelectorAll(".section-btn").forEach((button) => {
-      button.classList.toggle("active", !!ctx && button.dataset.sectionId === ctx.sectionId);
-    });
-
-    if (!placement) {
-      $("previousSectionBtn").disabled = true;
-      $("nextSectionBtn").disabled = true;
-      return;
-    }
-
-    const currentIndex = ctx && ctx.sectionId
-      ? sections.findIndex((section) => section.id === ctx.sectionId)
-      : -1;
-    $("previousSectionBtn").disabled = currentIndex <= 0;
-    $("nextSectionBtn").disabled = sections.length === 0 || currentIndex >= sections.length - 1;
+  function sceneLabel(scene, fallbackIndex) {
+    return scene && String(scene.name || "").trim()
+      ? scene.name
+      : "Scene " + ((scene && Number.isFinite(Number(scene.number))) ? scene.number : fallbackIndex + 1);
   }
 
-  function renderMixer() {
-    const tracks = state.live && Array.isArray(state.live.tracks) ? state.live.tracks : [];
-    const signature = tracks.map((track) => track.index + ":" + track.name).join("|");
-
-    if (signature !== state.mixerSignature) {
-      state.mixerSignature = signature;
-      $("trackMixer").innerHTML = "";
-
-      tracks.forEach((track) => {
-        const row = document.createElement("div");
-        row.className = "mixer-row";
-        row.dataset.trackIndex = track.index;
-        row.innerHTML =
-          '<span class="track-num">' + String(track.number).padStart(2, "0") + '</span>' +
-          '<strong class="track-name">' + escapeHtml(track.name) + '</strong>' +
-          '<input class="track-volume" type="range" min="0" max="1" step="0.01" value="' +
-          (Number.isFinite(track.volume) ? track.volume : 0.85) + '">' +
-          '<span class="volume-value">--</span>' +
-          '<button class="track-toggle mute">M</button>' +
-          '<button class="track-toggle solo">S</button>';
-
-        const slider = row.querySelector(".track-volume");
-        slider.addEventListener("pointerdown", () => slider.dataset.dragging = "1");
-        const release = () => delete slider.dataset.dragging;
-        slider.addEventListener("pointerup", release);
-        slider.addEventListener("pointercancel", release);
-        slider.addEventListener("input", () => {
-          row.querySelector(".volume-value").textContent = Math.round(Number(slider.value) * 100) + "%";
-          clearTimeout(volumeTimers.get(track.index));
-          volumeTimers.set(track.index, setTimeout(() => {
-            direct({
-              type: "set_track_volume",
-              args: { track: { index: track.index }, value: Number(slider.value) }
-            }).catch(() => {});
-          }, 80));
-        });
-
-        row.querySelector(".mute").addEventListener("click", () => {
-          const current = (state.live.tracks || []).find((item) => item.index === track.index);
-          direct({
-            type: "set_track_mute",
-            args: { track: { index: track.index }, value: !(current && current.mute) }
-          }).catch(() => {});
-        });
-
-        row.querySelector(".solo").addEventListener("click", () => {
-          const current = (state.live.tracks || []).find((item) => item.index === track.index);
-          direct({
-            type: "set_track_solo",
-            args: { track: { index: track.index }, value: !(current && current.solo) }
-          }).catch(() => {});
-        });
-
-        $("trackMixer").appendChild(row);
-      });
-    }
-
-    tracks.forEach((track) => {
-      const row = $("trackMixer").querySelector('[data-track-index="' + track.index + '"]');
-      if (!row) return;
-      const slider = row.querySelector(".track-volume");
-      if (!slider.dataset.dragging && Number.isFinite(track.volume)) slider.value = track.volume;
-      row.querySelector(".volume-value").textContent = Number.isFinite(track.volume)
-        ? Math.round(track.volume * 100) + "%"
-        : "--";
-      row.querySelector(".mute").classList.toggle("active", !!track.mute);
-      row.querySelector(".solo").classList.toggle("active", !!track.solo);
-    });
-
-    if (!tracks.length) {
-      $("trackMixer").innerHTML = '<div class="empty">Open Ableton and load Luma Live.amxd to see tracks.</div>';
-    }
+  function liveColor(value, fallback = "#23272d") {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return fallback;
+    const rgb = n & 0xFFFFFF;
+    return "#" + rgb.toString(16).padStart(6, "0");
   }
 
-  function renderScenes() {
-    const scenes = state.live && Array.isArray(state.live.scenes) ? state.live.scenes : [];
-    const signature = scenes.map((scene) => scene.index + ":" + scene.name).join("|");
-
-    if (signature !== state.sceneSignature) {
-      state.sceneSignature = signature;
-      $("sceneGrid").innerHTML = "";
-      scenes.forEach((scene) => {
-        const button = document.createElement("button");
-        button.className = "scene-btn";
-        button.dataset.sceneIndex = scene.index;
-        button.innerHTML =
-          '<span>' + String(scene.number).padStart(2, "0") + '</span>' +
-          '<strong>' + escapeHtml(scene.name) + '</strong>';
-        button.addEventListener("click", () => direct({
-          type: "fire_scene",
-          args: { scene: { index: scene.index } }
-        }).catch(() => {}));
-        $("sceneGrid").appendChild(button);
-      });
-    }
-
-    $("sceneGrid").querySelectorAll(".scene-btn").forEach((button) => {
-      button.classList.toggle(
-        "active",
-        Number(button.dataset.sceneIndex) === Number(state.live && state.live.activeSceneIndex)
-      );
-    });
-
-    if (!scenes.length) {
-      $("sceneGrid").innerHTML = '<div class="empty">No Session View scenes found.</div>';
-    }
-  }
-
-  function renderServiceOrder() {
-    const songs = state.arrangement && Array.isArray(state.arrangement.songs)
-      ? state.arrangement.songs
-      : [];
-    const ctx = state.live && state.live.liveContext;
-
-    $("serviceCount").textContent = songs.length;
-    $("activeSongCount").textContent = songs.length;
-    $("activeSetlistTitle").textContent = activeSetlist()
-      ? activeSetlist().title
-      : "No setlist loaded";
-
-    for (const id of ["serviceOrder", "activeArrangement"]) {
-      const host = $(id);
-      host.innerHTML = "";
-      songs.forEach((song, index) => {
-        const button = document.createElement("button");
-        button.className = "service-row" + (ctx && ctx.instanceId === song.instanceId ? " active" : "");
-        button.innerHTML =
-          '<span class="row-num">' + String(index + 1).padStart(2, "0") + '</span>' +
-          '<span><strong>' + escapeHtml(song.title) + '</strong><small>' +
-          escapeHtml(song.bpm + " BPM" + (song.key ? " · " + song.key : "")) +
-          '</small></span><b>' + (ctx && ctx.instanceId === song.instanceId ? "NOW" : "GO") + '</b>';
-        button.addEventListener("click", () => jumpTo(song, null));
-        host.appendChild(button);
-      });
-      if (!songs.length) host.innerHTML = '<div class="empty">Load a setlist to build the Arrangement map.</div>';
-    }
-  }
-
-  function renderLive() {
-    const live = state.live || {};
-    const ctx = live.liveContext;
-    const placement = currentPlacement();
-
-    setStatus(true, !!live.bridgeConnected);
-    renderTransport();
-
-    if (!ctx) {
-      $("currentSong").textContent = state.activeSetlistId ? "Waiting for playhead" : "No service loaded";
-      $("currentMeta").textContent = live.bridgeConnected
-        ? "Load a setlist or move the Ableton playhead into a synced song."
-        : "Open Ableton and load Luma Live.amxd.";
-      $("currentSection").textContent = "—";
-      $("nextSection").textContent = "—";
-      $("previousSongName").textContent = "—";
-      $("nextSongName").textContent = state.arrangement && state.arrangement.songs && state.arrangement.songs[0]
-        ? state.arrangement.songs[0].title
-        : "—";
-      $("previousSongBtn").disabled = true;
-      $("nextSongBtn").disabled = !(state.arrangement && state.arrangement.songs && state.arrangement.songs.length);
-      $("songProgress").style.width = "0%";
-    } else {
-      $("currentSong").textContent = ctx.songTitle;
-      $("currentMeta").textContent = [
-        ctx.bpm ? ctx.bpm + " BPM" : null,
-        ctx.key || null,
-        ctx.meter ? ctx.meter.numerator + "/" + ctx.meter.denominator : null,
-        state.arrangement ? "Song " + (ctx.songIndex + 1) + " of " + state.arrangement.songs.length : null
-      ].filter(Boolean).join(" · ");
-      $("currentSection").textContent = ctx.sectionName || "COUNT / PRE-ROLL";
-      $("nextSection").textContent = ctx.nextSectionName || "END";
-      $("previousSongName").textContent = ctx.previousSong ? ctx.previousSong.title : "—";
-      $("nextSongName").textContent = ctx.nextSong ? ctx.nextSong.title : "—";
-      $("previousSongBtn").disabled = !ctx.previousSong;
-      $("nextSongBtn").disabled = !ctx.nextSong;
-      $("songProgress").style.width = Math.round((ctx.progress || 0) * 1000) / 10 + "%";
-    }
-
-    renderSections(placement, ctx);
-    renderMixer();
-    renderScenes();
-    renderServiceOrder();
-  }
-
-  function renderSetlists() {
-    $("setlistCount").textContent = state.setlists.length;
-    $("setlistList").innerHTML = "";
-
-    state.setlists.forEach((setlist) => {
-      const row = document.createElement("div");
-      const active = setlist.id === state.activeSetlistId;
-      row.className = "saved-row" + (active ? " active" : "");
-      row.innerHTML =
-        '<span><strong>' + escapeHtml(setlist.title) + '</strong><small>' +
-        setlist.items.length + ' song' + (setlist.items.length === 1 ? "" : "s") +
-        (active ? " · ACTIVE" : "") + '</small></span>' +
-        '<button class="' + (active ? "quiet" : "primary") + '">' + (active ? "Resync" : "Load") + '</button>';
-      row.querySelector("button").addEventListener("click", () => syncSetlist(setlist.id));
-      $("setlistList").appendChild(row);
-    });
-
-    if (!state.setlists.length) {
-      $("setlistList").innerHTML = '<div class="empty">Build your first setlist in the Mac app.</div>';
-    }
-  }
-
-  function renderLibrary() {
-    $("songCount").textContent = state.songs.length;
-    $("songList").innerHTML = "";
-
-    state.songs.forEach((song) => {
-      const card = document.createElement("article");
-      card.className = "song-library-card";
-      card.innerHTML =
-        '<div><span class="eyebrow">SONG</span><h3>' + escapeHtml(song.title) + '</h3><p>' +
-        escapeHtml([song.artist, song.bpm + " BPM", song.key, song.meter.numerator + "/" + song.meter.denominator].filter(Boolean).join(" · ")) +
-        '</p></div>' +
-        '<div class="section-chips">' +
-        (song.sections || []).map((section) => '<span>' + escapeHtml(section.name) + ' · ' + section.startBar + '</span>').join("") +
-        '</div>';
-      $("songList").appendChild(card);
-    });
-
-    if (!state.songs.length) {
-      $("songList").innerHTML = '<div class="empty">No songs saved in the local library yet.</div>';
-    }
+  function readableText(hex) {
+    const clean = String(hex || "").replace("#", "");
+    if (clean.length !== 6) return "#f3f4f5";
+    const r = parseInt(clean.slice(0,2),16);
+    const g = parseInt(clean.slice(2,4),16);
+    const b = parseInt(clean.slice(4,6),16);
+    return (r * 299 + g * 587 + b * 114) / 1000 > 155 ? "#101214" : "#ffffff";
   }
 
   async function direct(command) {
-    const data = await api("/api/direct", {
-      method: "POST",
-      body: { command }
-    });
+    const data = await api("/api/direct", { method: "POST", body: { command } });
     if (data.state) {
       state.live = data.state;
-      renderLive();
+      renderAll();
     }
     return data;
   }
 
   async function jumpTo(song, sectionId) {
     if (!song) return;
+    showError("");
     try {
-      showError("");
       const data = await api("/api/jump", {
         method: "POST",
         body: {
@@ -476,9 +200,12 @@
           sectionId: sectionId || null
         }
       });
-      if (data.state) {
-        state.live = data.state;
-        renderLive();
+      if (data.state) state.live = data.state;
+      renderAll();
+      const ctx = state.live.liveContext;
+      if (sectionId && (!ctx || ctx.sectionId !== sectionId)) {
+        await new Promise(resolve => setTimeout(resolve, 120));
+        await refreshState();
       }
     } catch (error) {
       showError(error.message);
@@ -502,31 +229,285 @@
     const placement = currentPlacement();
     if (!placement) return;
     const sections = placement.sections || [];
-    let index = ctx && ctx.sectionId
-      ? sections.findIndex((section) => section.id === ctx.sectionId)
-      : -1;
+    let index = ctx && ctx.sectionId ? sections.findIndex(section => section.id === ctx.sectionId) : -1;
     if (direction > 0 && index < 0) index = -1;
     const target = sections[index + direction];
     if (target) await jumpTo(placement, target.id);
   }
 
-  async function syncSetlist(id) {
-    try {
-      showError("");
-      const data = await api("/api/setlists/" + encodeURIComponent(id) + "/sync", {
-        method: "POST",
-        body: {}
-      });
-      if (data.state) state.live = data.state;
-      if (data.library) setLibrary(data.library);
-      else await refreshLibrary();
-      document.querySelector('[data-tab="song"]').click();
-      showNotice(data.syncError
-        ? "Setlist loaded locally. Ableton sync is pending."
-        : "Setlist synced to Ableton.");
-    } catch (error) {
-      showError(error.message);
+  function renderCurrentScene() {
+    const scene = activeScene();
+    const tempo = Number.isFinite(Number(state.live.tempo)) ? Number(state.live.tempo) : null;
+    $("currentScene").textContent = scene ? sceneLabel(scene, scene.index) : "No active scene";
+    $("sceneMeta").textContent = [
+      state.live.isPlaying ? "Playing" : "Stopped",
+      tempo != null ? Math.round(tempo * 10) / 10 + " BPM" : null,
+      scene ? sceneLabel(scene, scene.index) : null
+    ].filter(Boolean).join(" · ");
+    $("tempo").textContent = tempo != null ? Math.round(tempo * 10) / 10 : "--";
+    if (document.activeElement !== $("tempoInput") && tempo != null) $("tempoInput").value = String(Math.round(tempo * 10) / 10);
+    $("tempoHint").textContent = scene && scene.tempoEnabled && Number(scene.tempo) > 0
+      ? "Current row is assigned " + Math.round(Number(scene.tempo) * 10) / 10 + " BPM in Ableton."
+      : "Current Live tempo.";
+    $("playBtn").classList.toggle("active", !!state.live.isPlaying);
+  }
+
+  function renderPerformScenes() {
+    const scenes = Array.isArray(state.live.scenes) ? state.live.scenes : [];
+    $("sceneCount").textContent = scenes.length + " scene" + (scenes.length === 1 ? "" : "s");
+    const host = $("performScenes");
+    host.innerHTML = "";
+
+    scenes.forEach((scene, index) => {
+      const button = document.createElement("button");
+      const active = Number(scene.index) === Number(state.live.activeSceneIndex);
+      button.className = "perform-scene" + (active ? " active" : "");
+      button.innerHTML =
+        '<span>' + String((scene.number || index + 1)).padStart(2, "0") + '</span>' +
+        '<strong>' + escapeHtml(sceneLabel(scene, index)) + '</strong>' +
+        '<small>' + (scene.tempoEnabled && Number(scene.tempo) > 0 ? Math.round(Number(scene.tempo) * 10) / 10 + " BPM" : "") + '</small>';
+      button.addEventListener("click", () => direct({
+        type: "fire_scene",
+        args: { scene: { index: Number(scene.index) } }
+      }).catch(error => showError(error.message)));
+      host.appendChild(button);
+    });
+
+    if (!scenes.length) host.innerHTML = '<div class="empty">No Session View scenes available.</div>';
+  }
+
+  function renderArrangement() {
+    const ctx = state.live && state.live.liveContext;
+    const placement = currentPlacement();
+    const arrangement = state.arrangement;
+    const sections = placement ? placement.sections || [] : [];
+
+    if (!ctx || !placement) {
+      $("currentSong").textContent = state.activeSetlistId ? "Waiting for playhead" : "No service loaded";
+      $("songMeta").textContent = state.activeSetlistId
+        ? "Move Ableton into a synced song or choose a song below."
+        : "Load a setlist from the Mac app to enable song sections.";
+      $("songPosition").textContent = "—";
+      $("currentSection").textContent = "—";
+      $("nextSection").textContent = "—";
+      $("previousSectionBtn").disabled = true;
+      $("nextSectionBtn").disabled = !sections.length;
+      $("previousSongBtn").disabled = true;
+      $("nextSongBtn").disabled = !(arrangement && arrangement.songs && arrangement.songs.length);
+    } else {
+      $("currentSong").textContent = ctx.songTitle;
+      $("songMeta").textContent = [
+        ctx.bpm ? ctx.bpm + " BPM" : null,
+        ctx.key || null,
+        ctx.meter ? ctx.meter.numerator + "/" + ctx.meter.denominator : null,
+        Number.isFinite(ctx.currentBar) ? "Bar " + ctx.currentBar + "." + (ctx.beatInBar || 1) : null
+      ].filter(Boolean).join(" · ");
+      $("songPosition").textContent = arrangement ? "Song " + (ctx.songIndex + 1) + " / " + arrangement.songs.length : "—";
+      $("currentSection").textContent = ctx.sectionName || "COUNT / PRE-ROLL";
+      $("nextSection").textContent = ctx.nextSectionName || "END";
+      $("previousSongBtn").disabled = !ctx.previousSong;
+      $("nextSongBtn").disabled = !ctx.nextSong;
+
+      const currentIndex = ctx.sectionId ? sections.findIndex(section => section.id === ctx.sectionId) : -1;
+      $("previousSectionBtn").disabled = currentIndex <= 0;
+      $("nextSectionBtn").disabled = sections.length === 0 || currentIndex >= sections.length - 1;
     }
+
+    const signature = placement
+      ? placement.instanceId + "|" + sections.map(section => section.id + ":" + section.name + ":" + section.localStartBar).join("|")
+      : "";
+    if (signature !== state.sectionSignature) {
+      state.sectionSignature = signature;
+      $("sectionGrid").innerHTML = "";
+      sections.forEach((section, index) => {
+        const button = document.createElement("button");
+        button.className = "section-btn";
+        button.dataset.sectionId = section.id;
+        button.innerHTML =
+          '<span>' + String(index + 1).padStart(2, "0") + '</span>' +
+          '<strong>' + escapeHtml(section.name) + '</strong>' +
+          '<small>Bar ' + section.localStartBar + '</small>';
+        button.addEventListener("click", () => jumpTo(placement, section.id));
+        $("sectionGrid").appendChild(button);
+      });
+    }
+
+    $("sectionGrid").querySelectorAll(".section-btn").forEach(button => {
+      button.classList.toggle("active", !!ctx && button.dataset.sectionId === ctx.sectionId);
+    });
+  }
+
+  function renderMixer() {
+    const tracks = Array.isArray(state.live.tracks) ? state.live.tracks : [];
+    const signature = tracks.map(track => track.index + ":" + track.name).join("|");
+    if (signature !== state.mixerSignature) {
+      state.mixerSignature = signature;
+      $("trackMixer").innerHTML = "";
+      tracks.forEach(track => {
+        const row = document.createElement("div");
+        row.className = "mixer-row";
+        row.dataset.trackIndex = track.index;
+        row.innerHTML =
+          '<span class="track-num">' + String(track.number || track.index + 1).padStart(2,"0") + '</span>' +
+          '<strong class="track-name">' + escapeHtml(track.name) + '</strong>' +
+          '<input class="track-volume" type="range" min="0" max="1" step="0.01" value="' + (Number.isFinite(Number(track.volume)) ? Number(track.volume) : 0.85) + '">' +
+          '<span class="volume-value">--</span>' +
+          '<button class="track-toggle mute">M</button>' +
+          '<button class="track-toggle solo">S</button>';
+
+        const slider = row.querySelector(".track-volume");
+        slider.addEventListener("input", () => {
+          row.querySelector(".volume-value").textContent = Math.round(Number(slider.value) * 100) + "%";
+          clearTimeout(volumeTimers.get(track.index));
+          volumeTimers.set(track.index, setTimeout(() => {
+            direct({
+              type: "set_track_volume",
+              args: { track: { index: Number(track.index) }, value: Number(slider.value) }
+            }).catch(() => {});
+          }, 80));
+        });
+        row.querySelector(".mute").addEventListener("click", () => direct({
+          type: "set_track_mute",
+          args: { track: { index: Number(track.index) }, value: !track.mute }
+        }).catch(error => showError(error.message)));
+        row.querySelector(".solo").addEventListener("click", () => direct({
+          type: "set_track_solo",
+          args: { track: { index: Number(track.index) }, value: !track.solo }
+        }).catch(error => showError(error.message)));
+        $("trackMixer").appendChild(row);
+      });
+    }
+
+    tracks.forEach(track => {
+      const row = $("trackMixer").querySelector('[data-track-index="' + track.index + '"]');
+      if (!row) return;
+      const slider = row.querySelector(".track-volume");
+      if (document.activeElement !== slider && Number.isFinite(Number(track.volume))) slider.value = Number(track.volume);
+      row.querySelector(".volume-value").textContent = Math.round(Number(slider.value) * 100) + "%";
+      row.querySelector(".mute").classList.toggle("active", !!track.mute);
+      row.querySelector(".solo").classList.toggle("active", !!track.solo);
+    });
+
+    if (!tracks.length) $("trackMixer").innerHTML = '<div class="empty">Track controls appear when Ableton is connected.</div>';
+  }
+
+  function renderBusk() {
+    const session = state.live && state.live.session;
+    const tracks = session && Array.isArray(session.tracks) ? session.tracks : [];
+    const scenes = session && Array.isArray(session.scenes) ? session.scenes : [];
+    $("buskMeta").textContent = [
+      (session && Number.isFinite(Number(session.trackCount)) ? session.trackCount : tracks.length) + " tracks",
+      (session && Number.isFinite(Number(session.sceneCount)) ? session.sceneCount : scenes.length) + " scenes",
+      Number.isFinite(Number(state.live.tempo)) ? Math.round(Number(state.live.tempo) * 10) / 10 + " BPM" : "-- BPM"
+    ].join(" · ");
+
+    const signature = JSON.stringify({
+      tracks: tracks.map(t => [t.index,t.name,t.color,t.playingSlotIndex,t.firedSlotIndex,(t.clips||[]).map(c=>[c.sceneIndex,c.hasClip,c.name,c.color,c.isRecording])]),
+      scenes: scenes.map(s => [s.index,s.name,s.tempoEnabled,s.tempo,s.isTriggered])
+    });
+    if (signature === state.buskSignature) return;
+    state.buskSignature = signature;
+
+    const host = $("buskGrid");
+    host.innerHTML = "";
+    if (!tracks.length || !scenes.length) {
+      host.innerHTML = '<div class="empty">No Session View grid is available yet. Tap Sync after Ableton finishes loading.</div>';
+      return;
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "session-matrix";
+    grid.style.gridTemplateColumns = "150px 54px repeat(" + tracks.length + ", minmax(128px, 1fr))";
+
+    const corner = document.createElement("div");
+    corner.className = "matrix-label";
+    corner.textContent = "SCENES";
+    grid.appendChild(corner);
+    const trackLabel = document.createElement("div");
+    trackLabel.className = "matrix-label";
+    trackLabel.textContent = "";
+    grid.appendChild(trackLabel);
+
+    tracks.forEach((track, index) => {
+      const header = document.createElement("div");
+      header.className = "track-header";
+      header.style.borderTopColor = liveColor(track.color);
+      header.innerHTML = '<span>' + (index + 1) + '</span><strong>' + escapeHtml(track.name) + '</strong>';
+      grid.appendChild(header);
+    });
+
+    scenes.forEach((scene, sceneIndex) => {
+      const info = document.createElement("div");
+      info.className = "scene-info" + (Number(scene.index) === Number(state.live.activeSceneIndex) ? " active" : "");
+      info.innerHTML =
+        '<strong>' + escapeHtml(sceneLabel(scene, sceneIndex)) + '</strong>' +
+        '<small>' + (sceneIndex + 1) + (scene.tempoEnabled && Number(scene.tempo) > 0 ? " · " + Math.round(Number(scene.tempo) * 10) / 10 + " BPM" : "") + '</small>';
+      grid.appendChild(info);
+
+      const launch = document.createElement("button");
+      launch.className = "scene-launch";
+      launch.textContent = "▶";
+      launch.addEventListener("click", () => direct({
+        type: "fire_scene",
+        args: { scene: { index: Number(scene.index) } }
+      }).catch(error => showError(error.message)));
+      grid.appendChild(launch);
+
+      tracks.forEach(track => {
+        const clip = (track.clips || []).find(item => Number(item.sceneIndex) === Number(scene.index));
+        const cell = document.createElement("button");
+        const hasClip = !!(clip && clip.hasClip);
+        const playing = Number(track.playingSlotIndex) === Number(scene.index);
+        const fired = Number(track.firedSlotIndex) === Number(scene.index);
+        cell.className = "clip-cell" + (hasClip ? " has-clip" : "") + (playing ? " playing" : "") + (fired ? " fired" : "");
+        if (hasClip) {
+          const bg = liveColor(clip.color, liveColor(track.color));
+          cell.style.background = bg;
+          cell.style.color = readableText(bg);
+          cell.innerHTML = '<strong>' + escapeHtml(clip.name || "Clip") + '</strong>' + (playing ? '<span>▶</span>' : clip.isRecording ? '<span>●</span>' : '');
+          cell.addEventListener("click", () => direct({
+            type: "fire_clip",
+            args: { trackIndex: Number(track.index), sceneIndex: Number(scene.index) }
+          }).catch(error => showError(error.message)));
+        } else {
+          cell.innerHTML = '<span class="empty-dot">■</span>';
+          cell.disabled = true;
+        }
+        grid.appendChild(cell);
+      });
+    });
+
+    const stopLabel = document.createElement("div");
+    stopLabel.className = "matrix-label stop-label";
+    stopLabel.textContent = "TRACK STOP";
+    grid.appendChild(stopLabel);
+    grid.appendChild(document.createElement("div"));
+
+    tracks.forEach(track => {
+      const stop = document.createElement("button");
+      stop.className = "track-stop";
+      stop.textContent = "■ STOP";
+      stop.addEventListener("click", () => direct({
+        type: "stop_track",
+        args: { trackIndex: Number(track.index) }
+      }).catch(error => showError(error.message)));
+      grid.appendChild(stop);
+    });
+
+    host.appendChild(grid);
+  }
+
+  function renderPerform() {
+    renderCurrentScene();
+    renderPerformScenes();
+    renderArrangement();
+    renderMixer();
+  }
+
+  function renderAll() {
+    setStatus(true, !!state.live.bridgeConnected);
+    renderPerform();
+    renderBusk();
   }
 
   function clearCommandPreview() {
@@ -542,10 +523,7 @@
     $("commandPreviewBtn").disabled = true;
     try {
       showError("");
-      const data = await api("/api/command/preview", {
-        method: "POST",
-        body: { text: value }
-      });
+      const data = await api("/api/command/preview", { method: "POST", body: { text: value } });
       const preview = data.preview || {};
       state.pendingCommandText = value;
       $("commandPreviewSummary").textContent = preview.summary || "Ready to apply";
@@ -568,17 +546,11 @@
     $("commandBtn").disabled = true;
     try {
       showError("");
-      const data = await api("/api/command", {
-        method: "POST",
-        body: { text: value }
-      });
+      const data = await api("/api/command", { method: "POST", body: { text: value } });
       if (data.state) state.live = data.state;
       if (data.library) setLibrary(data.library);
-      else renderLive();
-      const summary = data.result && data.result.summary
-        ? data.result.summary
-        : "Command completed.";
-      showNotice(summary);
+      renderAll();
+      showNotice(data.result && data.result.summary ? data.result.summary : "Command completed.");
       $("commandInput").value = "";
       clearCommandPreview();
     } catch (error) {
@@ -593,7 +565,7 @@
       const data = await api("/api/state");
       state.live = data.state || {};
       setStatus(true, !!state.live.bridgeConnected);
-      renderLive();
+      renderAll();
       showError("");
     } catch (error) {
       setStatus(false, false);
@@ -605,74 +577,74 @@
     try {
       const data = await api("/api/library");
       setLibrary(data);
-      setStatus(true, !!data.bridgeConnected || !!(state.live && state.live.bridgeConnected));
+      setStatus(true, !!data.bridgeConnected || !!state.live.bridgeConnected);
     } catch (error) {
       setStatus(false, false);
       showError(error.message);
     }
   }
 
-  document.querySelectorAll(".tab").forEach((button) => {
+  document.querySelectorAll(".tab").forEach(button => {
     button.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("active", item === button));
-      document.querySelectorAll(".page").forEach((page) => {
-        page.classList.toggle("active", page.dataset.page === button.dataset.tab);
-      });
+      document.querySelectorAll(".tab").forEach(item => item.classList.toggle("active", item === button));
+      document.querySelectorAll(".page").forEach(page => page.classList.toggle("active", page.dataset.page === button.dataset.tab));
     });
   });
 
-  $("playBtn").addEventListener("click", () => {
-    direct({
-      type: state.live && state.live.isPlaying ? "stop_playback" : "start_playback",
-      args: {}
-    }).catch((error) => showError(error.message));
+  $("playBtn").addEventListener("click", () => direct({ type: "start_playback", args: {} }).catch(error => showError(error.message)));
+  $("stopBtn").addEventListener("click", () => direct({ type: "stop_playback", args: {} }).catch(error => showError(error.message)));
+  $("stopAllBtn").addEventListener("click", () => direct({ type: "stop_all_clips", args: {} }).catch(error => showError(error.message)));
+  $("refreshBtn").addEventListener("click", () => Promise.all([refreshLibrary(), refreshState()]));
+  $("tempoOverrideBtn").addEventListener("click", () => {
+    const bpm = Number($("tempoInput").value);
+    if (!Number.isFinite(bpm) || bpm < 20 || bpm > 999) return showError("Tempo must be between 20 and 999 BPM.");
+    direct({ type: "set_tempo", args: { bpm } }).catch(error => showError(error.message));
   });
-  $("stopBtn").addEventListener("click", () => direct({ type: "stop_playback", args: {} }).catch((error) => showError(error.message)));
-  $("clickBtn").addEventListener("click", () => direct({
-    type: "set_metronome",
-    args: { enabled: !(state.live && state.live.metronome) }
-  }).catch((error) => showError(error.message)));
+  $("previousSceneBtn").addEventListener("click", () => {
+    const scenes = state.live.scenes || [];
+    const current = scenes.findIndex(scene => Number(scene.index) === Number(state.live.activeSceneIndex));
+    const target = scenes[Math.max(0, current > 0 ? current - 1 : 0)];
+    if (target) direct({ type: "fire_scene", args: { scene: { index: Number(target.index) } } }).catch(error => showError(error.message));
+  });
+  $("nextSceneBtn").addEventListener("click", () => {
+    const scenes = state.live.scenes || [];
+    const current = scenes.findIndex(scene => Number(scene.index) === Number(state.live.activeSceneIndex));
+    const target = scenes[Math.min(scenes.length - 1, current >= 0 ? current + 1 : 0)];
+    if (target) direct({ type: "fire_scene", args: { scene: { index: Number(target.index) } } }).catch(error => showError(error.message));
+  });
 
-  $("previousSongBtn").addEventListener("click", () => jumpAdjacentSong(-1));
-  $("nextSongBtn").addEventListener("click", () => jumpAdjacentSong(1));
   $("previousSectionBtn").addEventListener("click", () => jumpAdjacentSection(-1));
   $("nextSectionBtn").addEventListener("click", () => jumpAdjacentSection(1));
-  $("stopAllBtn").addEventListener("click", () => direct({ type: "stop_all_clips", args: {} }).catch((error) => showError(error.message)));
+  $("previousSongBtn").addEventListener("click", () => jumpAdjacentSong(-1));
+  $("nextSongBtn").addEventListener("click", () => jumpAdjacentSong(1));
+
+  $("buskSyncBtn").addEventListener("click", () => refreshState());
+  $("buskStopAllBtn").addEventListener("click", () => direct({ type: "stop_all_clips", args: {} }).catch(error => showError(error.message)));
 
   $("commandPreviewBtn").addEventListener("click", () => previewPlainCommand($("commandInput").value));
   $("commandBtn").addEventListener("click", () => runPlainCommand($("commandInput").value));
-  $("commandApplyBtn").addEventListener("click", () => {
-    if (state.pendingCommandText) runPlainCommand(state.pendingCommandText);
-  });
+  $("commandApplyBtn").addEventListener("click", () => state.pendingCommandText && runPlainCommand(state.pendingCommandText));
   $("commandCancelBtn").addEventListener("click", clearCommandPreview);
   $("commandInput").addEventListener("input", clearCommandPreview);
-  $("commandInput").addEventListener("keydown", (event) => {
+  $("commandInput").addEventListener("keydown", event => {
     if (event.key === "Enter") {
       event.preventDefault();
       previewPlainCommand($("commandInput").value);
     }
   });
-  document.querySelectorAll("[data-command]").forEach((button) => {
-    button.addEventListener("click", () => {
-      $("commandInput").value = button.dataset.command;
-      previewPlainCommand(button.dataset.command);
-    });
-  });
-
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
-  }
 
   $("pairingConnectBtn").addEventListener("click", pairDevice);
   $("pairingCodeInput").addEventListener("input", () => {
     const digits = $("pairingCodeInput").value.replace(/\D/g, "").slice(0, 6);
-    if ($("pairingCodeInput").value !== digits) $("pairingCodeInput").value = digits;
+    $("pairingCodeInput").value = digits;
     pairingError("");
     if (digits.length === 6) pairDevice();
   });
-  $("pairingCodeInput").addEventListener("keydown", (event) => {
+  $("pairingCodeInput").addEventListener("keydown", event => {
     if (event.key === "Enter") pairDevice();
   });
+
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
   if (!token) {
     setStatus(false, false);
@@ -682,10 +654,6 @@
     Promise.all([refreshLibrary(), refreshState()]).catch(() => {});
   }
 
-  setInterval(() => {
-    if (token) refreshState().catch(() => {});
-  }, 650);
-  setInterval(() => {
-    if (token) refreshLibrary().catch(() => {});
-  }, 4000);
+  setInterval(() => { if (token) refreshState().catch(() => {}); }, 700);
+  setInterval(() => { if (token) refreshLibrary().catch(() => {}); }, 5000);
 })();
