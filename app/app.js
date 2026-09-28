@@ -1278,12 +1278,20 @@
       const result = await invoke("run_system_check");
       const packages = result.packages || [];
       const ready = packages.filter((item) => item.sourceAls && item.stemCount > 0).length;
+      const capabilities = Array.isArray(result.adapterCapabilities) ? result.adapterCapabilities : [];
+      const requiredBuildCapabilities = ["arrangement-audio", "transpose", "bulk-build"];
+      const missingBuildCapabilities = requiredBuildCapabilities.filter((name) => !capabilities.includes(name));
+      const buildReady = !!result.bridgeConnected && missingBuildCapabilities.length === 0;
       host.innerHTML =
         '<div class="check-row ' + (result.libraryWritable ? "pass" : "fail") + '"><strong>Library write access</strong><span>' + (result.libraryWritable ? "PASS" : "FAIL") + '</span></div>' +
         '<div class="check-row ' + (result.templateExists ? "pass" : "warn") + '"><strong>Church Standard.als</strong><span>' + (result.templateExists ? "FOUND" : "MISSING") + '</span></div>' +
         '<div class="check-row ' + (result.bridgeConnected ? "pass" : "fail") + '"><strong>Ableton adapter' +
           (result.adapterVersion ? " · v" + escapeHtml(result.adapterVersion) : "") +
           '</strong><span>' + (result.bridgeConnected ? "CONNECTED" : "OFFLINE") + '</span></div>' +
+        '<div class="check-row ' + (buildReady ? "pass" : "fail") + '"><strong>Service build API</strong><span>' +
+          (buildReady ? "READY" : (result.bridgeConnected ? "UPDATE MAX" : "OFFLINE")) + '</span></div>' +
+        (missingBuildCapabilities.length ? '<div class="package-check"><strong>Missing adapter capabilities</strong><small>' +
+          escapeHtml(missingBuildCapabilities.join(", ")) + '</small></div>' : '') +
         '<div class="check-row ' + (ready === packages.length && packages.length ? "pass" : "warn") + '"><strong>Song packages</strong><span>' + ready + " / " + packages.length + ' READY</span></div>' +
         packages.map((item) =>
           '<div class="package-check"><strong>' + escapeHtml((state.songs.find((song) => song.id === item.songId) || {}).title || item.songId) + '</strong><small>' +
