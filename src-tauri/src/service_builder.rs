@@ -284,6 +284,31 @@ fn scan_cues(package_dir: &Path) -> Result<Vec<CueAsset>, String> {
     Ok(files)
 }
 
+
+fn detect_source_als(package_dir: &Path) -> Result<Option<String>, String> {
+    let mut candidates = Vec::new();
+    for entry in fs::read_dir(package_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .extension()
+                .and_then(|value| value.to_str())
+                .map(|value| value.eq_ignore_ascii_case("als"))
+                .unwrap_or(false)
+        {
+            candidates.push(path);
+        }
+    }
+    candidates.sort();
+    Ok(candidates.first().map(|path| {
+        path.file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_string()
+    }))
+}
+
 pub fn ensure_song_package(root: &Path, song: &Song) -> Result<PathBuf, String> {
     ensure_layout(root)?;
     let package = song_package_dir(root, song);
@@ -319,6 +344,9 @@ pub fn ensure_song_package(root: &Path, song: &Song) -> Result<PathBuf, String> 
 
     manifest.song_id = song.id.clone();
     manifest.title = song.title.clone();
+    if manifest.source_als.is_none() {
+        manifest.source_als = detect_source_als(&package)?;
+    }
     if manifest.stems.is_empty() {
         manifest.stems = scan_audio(&package)?;
     }
