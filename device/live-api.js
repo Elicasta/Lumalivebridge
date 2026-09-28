@@ -487,6 +487,10 @@ function execute(command) {
     return {};
   }
 
+  if (type === "refresh_session") {
+    return { state: snapshot() };
+  }
+
   if (type === "create_midi_clip") {
     var clipTrack = targetIndex("tracks", args.track);
     var clipScene = targetIndex("scenes", args.scene);
@@ -592,7 +596,15 @@ function execute(command) {
     var createdArrangementClip = arrangementClipAt(arrangementTrack, args.position);
     if (!createdArrangementClip) throw new Error("Ableton did not create the Arrangement audio clip");
     createdArrangementClip.set("name", String(args.name));
-    return { trackIndex: arrangementTrack, position: Number(args.position) };
+    var transposeSemitones = Number(args.transposeSemitones || 0);
+    if (transposeSemitones !== 0) {
+      try { createdArrangementClip.set("pitch_coarse", transposeSemitones); } catch (_) {}
+    }
+    return {
+      trackIndex: arrangementTrack,
+      position: Number(args.position),
+      transposeSemitones: transposeSemitones
+    };
   }
 
   if (type === "create_arrangement_midi_clip") {
