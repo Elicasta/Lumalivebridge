@@ -5,11 +5,13 @@ mod db;
 mod lan;
 mod migration;
 mod models;
+mod pairing;
 mod state;
 
 use crate::arrangement::{build_arrangement, jump_target, locate_position, Arrangement};
 use crate::db::Database;
 use crate::models::{LibraryPayload, RuntimeInfo, Setlist, SetlistInput, Song, SongInput};
+use crate::pairing::PairingGate;
 use crate::state::AppState;
 use serde_json::{json, Value};
 use std::fs;
@@ -106,6 +108,16 @@ fn get_runtime_info(state: State<'_, AppState>) -> Result<RuntimeInfo, String> {
         .read()
         .map(|runtime| runtime.clone())
         .map_err(|_| "Runtime state lock failed".to_string())
+}
+
+#[tauri::command]
+fn get_pairing_code(state: State<'_, AppState>) -> Result<Value, String> {
+    Ok(json!({ "code": state.pairing.current_code()? }))
+}
+
+#[tauri::command]
+fn rotate_pairing_code(state: State<'_, AppState>) -> Result<Value, String> {
+    Ok(json!({ "code": state.pairing.rotate()? }))
 }
 
 fn active_arrangement(state: &AppState) -> Result<Option<Arrangement>, String> {
@@ -317,6 +329,7 @@ fn main() {
                 db,
                 runtime,
                 remote_token: token,
+                pairing: Arc::new(PairingGate::new()),
             };
 
             app.manage(state.clone());
@@ -347,6 +360,8 @@ fn main() {
             save_setlist,
             delete_setlist,
             get_runtime_info,
+            get_pairing_code,
+            rotate_pairing_code,
             get_live_state,
             direct_live_command,
             sync_live_setlist,
