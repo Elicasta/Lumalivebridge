@@ -84,6 +84,8 @@ pub struct SetlistItemInput {
     pub song_id: String,
     #[serde(default)]
     pub transition: TransitionSpec,
+    #[serde(default)]
+    pub transpose_semitones: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +94,7 @@ pub struct SetlistItem {
     pub id: String,
     pub song_id: String,
     pub transition: TransitionSpec,
+    pub transpose_semitones: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
