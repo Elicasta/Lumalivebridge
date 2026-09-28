@@ -21,7 +21,7 @@
         "box": {
           "id": "obj-title",
           "maxclass": "comment",
-          "text": "LUMA LIVE BRIDGE",
+          "text": "LUMA LIVE ABLETON ADAPTER",
           "fontsize": 18.0,
           "fontface": 1,
           "patching_rect": [30.0, 24.0, 260.0, 28.0],
@@ -33,7 +33,7 @@
         "box": {
           "id": "obj-subtitle",
           "maxclass": "comment",
-          "text": "Ableton Live 12 ↔ local command remote",
+          "text": "Ableton Live 12 ↔ Luma Live.app · localhost only",
           "patching_rect": [30.0, 56.0, 320.0, 22.0],
           "presentation": 1,
           "presentation_rect": [18.0, 44.0, 320.0, 22.0]
@@ -91,7 +91,7 @@
         "box": {
           "id": "obj-note",
           "maxclass": "comment",
-          "text": "Open the LAN URL printed in the Max Console on your iPad. Keep this device loaded on one MIDI track.",
+          "text": "Keep one adapter loaded on a MIDI track. Luma Live.app owns the iPad remote; this device listens only on 127.0.0.1:17878.",
           "patching_rect": [30.0, 345.0, 650.0, 42.0],
           "presentation": 1,
           "presentation_rect": [18.0, 78.0, 500.0, 40.0]
