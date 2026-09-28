@@ -175,12 +175,16 @@ async fn sync_live_setlist(state: State<'_, AppState>, id: String) -> Result<Val
         .map(|point| json!({ "time": point.time, "name": point.name }))
         .collect();
 
-    bridge::send("sync_cue_points", json!({ "replace": true, "points": points })).await?;
     state.db.set_active_setlist_id(Some(&setlist.id))?;
+    let sync_result = bridge::send("sync_cue_points", json!({ "replace": true, "points": points })).await;
+    let bridge_connected = sync_result.is_ok();
+    let sync_error = sync_result.err();
 
     Ok(json!({
         "arrangement": arrangement,
-        "state": enriched_live_state(&state).await?
+        "state": enriched_live_state(&state).await?,
+        "bridgeConnected": bridge_connected,
+        "syncError": sync_error
     }))
 }
 
