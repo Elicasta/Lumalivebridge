@@ -11,7 +11,7 @@ iPad / browser
       |
       | same-network HTTP
       v
-Luma Live.app :7878
+Luma Live.app :7878–7897
   ├─ Song Control
   ├─ Busk
   ├─ SQLite song library
@@ -170,13 +170,9 @@ This migration does not overwrite a non-empty canonical SQLite library.
 
 ### Public LAN host
 
-Only the Mac app listens publicly:
+Only the Mac app listens publicly. It tries port `7878` first and falls back through `7897` if a port is already occupied.
 
-```text
-0.0.0.0:7878
-```
-
-The Settings page shows the tokenized URL to copy to an iPad on the same Wi-Fi or Ethernet network.
+The Settings page shows the actual tokenized URL to copy to an iPad on the same Wi-Fi or Ethernet network.
 
 ### Private Ableton adapter
 
