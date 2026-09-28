@@ -1,4 +1,8 @@
-use crate::models::{LibraryPayload, RuntimeInfo, Setlist, SetlistInput, Song, SongInput};
+use crate::arrangement::{build_arrangement, jump_target, locate_position, Arrangement, LiveContext};
+use crate::models::{
+    LibraryPayload, SectionInput, Setlist, SetlistInput, SetlistItemInput, Song, SongInput,
+};
+use crate::plain::{plan as plan_plain_text, PlainPlan};
 use crate::state::AppState;
 use axum::{
     extract::{Path, State as AxumState},
@@ -8,8 +12,8 @@ use axum::{
     Json, Router,
 };
 use if_addrs::get_if_addrs;
-use serde::Serialize;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 const REMOTE_INDEX: &str = include_str!("../../remote/index.html");
@@ -18,7 +22,7 @@ const REMOTE_CSS: &str = include_str!("../../remote/styles.css");
 const REMOTE_MANIFEST: &str = include_str!("../../remote/manifest.webmanifest");
 const REMOTE_SW: &str = include_str!("../../remote/sw.js");
 
-type ApiError = (StatusCode, Json<serde_json::Value>);
+type ApiError = (StatusCode, Json<Value>);
 
 fn api_error(status: StatusCode, message: impl ToString) -> ApiError {
     (status, Json(json!({ "ok": false, "error": message.to_string() })))
@@ -89,10 +93,55 @@ async fn health() -> Json<Health> {
     })
 }
 
+fn library_or_error(state: &AppState) -> Result<LibraryPayload, ApiError> {
+    state
+        .db
+        .library()
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))
+}
+
+fn arrangement_from_library(library: &LibraryPayload) -> Result<Option<Arrangement>, String> {
+    let Some(active_id) = library.active_setlist_id.as_deref() else {
+        return Ok(None);
+    };
+    let Some(setlist) = library.setlists.iter().find(|setlist| setlist.id == active_id) else {
+        return Ok(None);
+    };
+    build_arrangement(setlist, &library.songs).map(Some)
+}
+
+async fn current_context(state: &AppState, arrangement: Option<&Arrangement>) -> Option<LiveContext> {
+    let arrangement = arrangement?;
+    let live = state.bridge.state().await.ok()?;
+    let beat = live.get("currentSongTime").and_then(Value::as_f64)?;
+    locate_position(arrangement, beat)
+}
+
+async fn live_payload(state: &AppState) -> Result<Value, String> {
+    let library = state.db.library()?;
+    let arrangement = arrangement_from_library(&library)?;
+    let bridge_state = state.bridge.state().await;
+    let bridge_connected = bridge_state.is_ok();
+    let live = bridge_state.unwrap_or(Value::Null);
+    let context = live
+        .get("currentSongTime")
+        .and_then(Value::as_f64)
+        .and_then(|beat| arrangement.as_ref().and_then(|arrangement| locate_position(arrangement, beat)));
+
+    Ok(json!({
+        "ok": true,
+        "bridgeConnected": bridge_connected,
+        "state": live,
+        "liveContext": context,
+        "arrangement": arrangement,
+        "activeSetlistId": library.active_setlist_id
+    }))
+}
+
 async fn runtime(
     AxumState(state): AxumState<AppState>,
     headers: HeaderMap,
-) -> Result<Json<RuntimeInfo>, ApiError> {
+) -> Result<Json<crate::models::RuntimeInfo>, ApiError> {
     authorize(&headers, &state)?;
     let info = state
         .runtime
@@ -107,11 +156,7 @@ async fn library(
     headers: HeaderMap,
 ) -> Result<Json<LibraryPayload>, ApiError> {
     authorize(&headers, &state)?;
-    state
-        .db
-        .library()
-        .map(Json)
-        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))
+    library_or_error(&state).map(Json)
 }
 
 async fn save_song(
@@ -124,19 +169,19 @@ async fn save_song(
         .db
         .save_song(input)
         .map(Json)
-        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))
 }
 
 async fn delete_song(
     AxumState(state): AxumState<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<Value>, ApiError> {
     authorize(&headers, &state)?;
     state
         .db
         .delete_song(&id)
-        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -150,20 +195,391 @@ async fn save_setlist(
         .db
         .save_setlist(input)
         .map(Json)
-        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))
 }
 
 async fn delete_setlist(
     AxumState(state): AxumState<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<Value>, ApiError> {
     authorize(&headers, &state)?;
     state
         .db
         .delete_setlist(&id)
-        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))?;
     Ok(Json(json!({ "ok": true })))
+}
+
+async fn load_setlist_impl(state: &AppState, id: &str) -> Result<Value, String> {
+    let library = state.db.library()?;
+    let setlist = library
+        .setlists
+        .iter()
+        .find(|setlist| setlist.id == id)
+        .ok_or_else(|| "Setlist not found".to_string())?
+        .clone();
+    let arrangement = build_arrangement(&setlist, &library.songs)?;
+
+    state.db.set_active_setlist_id(Some(&setlist.id))?;
+
+    let points: Vec<Value> = arrangement
+        .markers
+        .iter()
+        .map(|marker| json!({"time": marker.time, "name": marker.name}))
+        .collect();
+
+    let sync_result = state
+        .bridge
+        .direct(json!({
+            "type": "sync_cue_points",
+            "args": { "replace": true, "points": points }
+        }))
+        .await;
+
+    Ok(json!({
+        "ok": true,
+        "activeSetlistId": setlist.id,
+        "arrangement": arrangement,
+        "bridgeConnected": sync_result.is_ok(),
+        "sync": sync_result.as_ref().ok(),
+        "syncError": sync_result.err()
+    }))
+}
+
+async fn load_setlist(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    load_setlist_impl(&state, &id)
+        .await
+        .map(Json)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))
+}
+
+async fn live(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    live_payload(&state)
+        .await
+        .map(Json)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))
+}
+
+#[derive(Deserialize)]
+struct DirectBody {
+    command: Value,
+}
+
+fn allowed_remote_command(command: &Value) -> bool {
+    let Some(kind) = command.get("type").and_then(Value::as_str) else {
+        return false;
+    };
+    matches!(
+        kind,
+        "start_playback"
+            | "stop_playback"
+            | "set_metronome"
+            | "stop_all_clips"
+            | "fire_scene"
+            | "set_track_volume"
+            | "set_track_mute"
+            | "set_track_solo"
+            | "set_tempo"
+            | "set_meter"
+    )
+}
+
+async fn live_direct(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DirectBody>,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    if !allowed_remote_command(&body.command) {
+        return Err(api_error(StatusCode::BAD_REQUEST, "Command is not allowed from the remote"));
+    }
+    state
+        .bridge
+        .direct(body.command)
+        .await
+        .map_err(|error| api_error(StatusCode::SERVICE_UNAVAILABLE, error))?;
+    live_payload(&state)
+        .await
+        .map(Json)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JumpBody {
+    song_id: Option<String>,
+    instance_id: Option<String>,
+    section_id: Option<String>,
+}
+
+async fn jump_impl(state: &AppState, body: &JumpBody) -> Result<Value, String> {
+    let library = state.db.library()?;
+    let arrangement = arrangement_from_library(&library)?
+        .ok_or_else(|| "No active setlist".to_string())?;
+
+    let (time, song, _) = jump_target(
+        &arrangement,
+        body.song_id.as_deref(),
+        body.instance_id.as_deref(),
+        body.section_id.as_deref(),
+    )?;
+    let bpm = song.bpm;
+    let meter = song.meter.clone();
+
+    state
+        .bridge
+        .direct(json!({"type":"set_tempo","args":{"bpm":bpm}}))
+        .await?;
+    state
+        .bridge
+        .direct(json!({
+            "type":"set_meter",
+            "args":{"numerator":meter.numerator,"denominator":meter.denominator}
+        }))
+        .await?;
+    state
+        .bridge
+        .direct(json!({"type":"jump_to_time","args":{"time":time}}))
+        .await?;
+
+    live_payload(state).await
+}
+
+async fn live_jump(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<JumpBody>,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    jump_impl(&state, &body)
+        .await
+        .map(Json)
+        .map_err(|error| api_error(StatusCode::SERVICE_UNAVAILABLE, error))
+}
+
+#[derive(Deserialize)]
+struct PlainTextBody {
+    text: String,
+}
+
+async fn plain_plan(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<PlainTextBody>,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    let library = library_or_error(&state)?;
+    let arrangement = arrangement_from_library(&library)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))?;
+    let context = current_context(&state, arrangement.as_ref()).await;
+    let plan = plan_plain_text(&body.text, &library, context.as_ref())
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))?;
+    Ok(Json(json!({ "ok": true, "plan": plan })))
+}
+
+fn song_input_from_song(song: &Song) -> SongInput {
+    SongInput {
+        id: Some(song.id.clone()),
+        title: song.title.clone(),
+        artist: Some(song.artist.clone()),
+        bpm: song.bpm,
+        key: Some(song.key.clone()),
+        meter: song.meter.clone(),
+        length_bars: song.length_bars,
+        sections: song
+            .sections
+            .iter()
+            .map(|section| SectionInput {
+                id: Some(section.id.clone()),
+                name: section.name.clone(),
+                start_bar: section.start_bar,
+            })
+            .collect(),
+    }
+}
+
+async fn apply_plain_plan(state: &AppState, plan: &PlainPlan) -> Result<Value, String> {
+    let mut results = Vec::new();
+
+    for step in &plan.steps {
+        let result = match step.kind.as_str() {
+            "ableton" => {
+                let command = step
+                    .data
+                    .get("command")
+                    .cloned()
+                    .ok_or_else(|| "Plain-language Ableton step is missing a command".to_string())?;
+                state.bridge.direct(command).await?
+            }
+
+            "load_setlist" => {
+                let id = step
+                    .data
+                    .get("setlistId")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "Load-setlist step is missing setlistId".to_string())?;
+                load_setlist_impl(state, id).await?
+            }
+
+            "jump_section" => {
+                let song_id = step
+                    .data
+                    .get("songId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+                let section_id = step
+                    .data
+                    .get("sectionId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+                let body = JumpBody {
+                    song_id,
+                    instance_id: None,
+                    section_id,
+                };
+                jump_impl(state, &body).await?
+            }
+
+            "create_song" => {
+                let input: SongInput =
+                    serde_json::from_value(step.data.clone()).map_err(|error| error.to_string())?;
+                let song = state.db.save_song(input)?;
+                json!({"song":song})
+            }
+
+            "move_section" => {
+                let song_id = step
+                    .data
+                    .get("songId")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "Move-section step is missing songId".to_string())?;
+                let section_id = step
+                    .data
+                    .get("sectionId")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "Move-section step is missing sectionId".to_string())?;
+                let start_bar = step
+                    .data
+                    .get("startBar")
+                    .and_then(Value::as_i64)
+                    .ok_or_else(|| "Move-section step is missing startBar".to_string())?;
+
+                let library = state.db.library()?;
+                let song = library
+                    .songs
+                    .iter()
+                    .find(|song| song.id == song_id)
+                    .ok_or_else(|| "Song not found".to_string())?;
+                let mut input = song_input_from_song(song);
+                let section = input
+                    .sections
+                    .iter_mut()
+                    .find(|section| section.id.as_deref() == Some(section_id))
+                    .ok_or_else(|| "Section not found".to_string())?;
+                section.start_bar = start_bar;
+                let saved = state.db.save_song(input)?;
+                json!({"song":saved})
+            }
+
+            "add_song_to_setlist" => {
+                let song_id = step
+                    .data
+                    .get("songId")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "Setlist edit is missing songId".to_string())?;
+                let setlist_id = step
+                    .data
+                    .get("setlistId")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "Setlist edit is missing setlistId".to_string())?;
+                let after_song_id = step.data.get("afterSongId").and_then(Value::as_str);
+
+                let library = state.db.library()?;
+                if !library.songs.iter().any(|song| song.id == song_id) {
+                    return Err("Song not found".into());
+                }
+                let setlist = library
+                    .setlists
+                    .iter()
+                    .find(|setlist| setlist.id == setlist_id)
+                    .ok_or_else(|| "Setlist not found".to_string())?;
+
+                let mut items: Vec<SetlistItemInput> = setlist
+                    .items
+                    .iter()
+                    .map(|item| SetlistItemInput {
+                        id: Some(item.id.clone()),
+                        song_id: item.song_id.clone(),
+                    })
+                    .collect();
+
+                let new_item = SetlistItemInput {
+                    id: None,
+                    song_id: song_id.to_string(),
+                };
+                if let Some(after_id) = after_song_id {
+                    if let Some(index) = items.iter().position(|item| item.song_id == after_id) {
+                        items.insert(index + 1, new_item);
+                    } else {
+                        items.push(new_item);
+                    }
+                } else {
+                    items.push(new_item);
+                }
+
+                let saved = state.db.save_setlist(SetlistInput {
+                    id: Some(setlist.id.clone()),
+                    title: setlist.title.clone(),
+                    gap_bars: setlist.gap_bars,
+                    items,
+                })?;
+                json!({"setlist":saved})
+            }
+
+            other => return Err(format!("Unsupported plain-language step: {other}")),
+        };
+
+        results.push(json!({
+            "kind": step.kind,
+            "summary": step.summary,
+            "result": result
+        }));
+    }
+
+    Ok(json!({
+        "ok": true,
+        "planId": plan.id,
+        "results": results,
+        "library": state.db.library()?,
+        "live": live_payload(state).await?
+    }))
+}
+
+#[derive(Deserialize)]
+struct ApplyPlanBody {
+    plan: PlainPlan,
+}
+
+async fn plain_apply(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ApplyPlanBody>,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    apply_plain_plan(&state, &body.plan)
+        .await
+        .map(Json)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))
 }
 
 fn lan_urls(port: u16, token: &str) -> Vec<String> {
@@ -225,6 +641,12 @@ pub async fn run_server(state: AppState) -> anyhow::Result<()> {
         .route("/api/songs/:id", delete(delete_song))
         .route("/api/setlists", post(save_setlist))
         .route("/api/setlists/:id", delete(delete_setlist))
+        .route("/api/setlists/:id/load", post(load_setlist))
+        .route("/api/live", get(live))
+        .route("/api/live/direct", post(live_direct))
+        .route("/api/live/jump", post(live_jump))
+        .route("/api/plain/plan", post(plain_plan))
+        .route("/api/plain/apply", post(plain_apply))
         .with_state(state);
 
     axum::serve(listener, app).await?;
