@@ -134,6 +134,56 @@ function ensureLumaCuePoint(time, name) {
   return { created: true, renamed: false, skipped: false };
 }
 
+function findTrackByName(name) {
+  var needle = String(name || "").toLowerCase();
+  var total = count("tracks");
+  for (var i = 0; i < total; i++) {
+    var api = live("live_set tracks " + i);
+    if (String(getProp(api, "name") || "").toLowerCase() === needle) return i;
+  }
+  return -1;
+}
+
+function ensureTrack(kind, name) {
+  var existing = findTrackByName(name);
+  if (existing >= 0) return existing;
+
+  var set = live("live_set");
+  var before = count("tracks");
+  if (kind === "midi") set.call("create_midi_track", -1);
+  else set.call("create_audio_track", -1);
+  setName("live_set tracks " + before, name);
+  return before;
+}
+
+function arrangementClipAt(trackIndex, position) {
+  var track = live("live_set tracks " + trackIndex);
+  var total = Number(track.getcount("arrangement_clips")) || 0;
+  for (var i = total - 1; i >= 0; i--) {
+    var clip = live("live_set tracks " + trackIndex + " arrangement_clips " + i);
+    var start = Number(getProp(clip, "start_time"));
+    if (Math.abs(start - Number(position)) <= 0.01) return clip;
+  }
+  return null;
+}
+
+function clearLumaArrangement() {
+  var removed = 0;
+  var trackCount = count("tracks");
+  for (var t = 0; t < trackCount; t++) {
+    var track = live("live_set tracks " + t);
+    var total = Number(track.getcount("arrangement_clips")) || 0;
+    for (var i = total - 1; i >= 0; i--) {
+      var clip = live("live_set tracks " + t + " arrangement_clips " + i);
+      var name = String(getProp(clip, "name") || "");
+      if (name.indexOf("LL|") !== 0) continue;
+      track.call("delete_clip", "id " + Number(clip.id));
+      removed += 1;
+    }
+  }
+  return removed;
+}
+
 function trackState() {
   var tracks = [];
   var trackCount = count("tracks");
@@ -359,6 +409,32 @@ function execute(command) {
   if (type === "jump_to_time") {
     set.set("current_song_time", Number(args.time));
     return { time: Number(args.time) };
+  }
+
+  if (type === "ensure_track") {
+    var ensuredIndex = ensureTrack(args.kind, args.name);
+    return { trackIndex: ensuredIndex };
+  }
+
+  if (type === "clear_luma_arrangement") {
+    return { removed: clearLumaArrangement() };
+  }
+
+  if (type === "create_arrangement_audio_clip") {
+    var arrangementTrack = targetIndex("tracks", args.track);
+    var arrangementTrackApi = live("live_set tracks " + arrangementTrack);
+    arrangementTrackApi.call("create_audio_clip", String(args.filePath), Number(args.position));
+    var createdArrangementClip = arrangementClipAt(arrangementTrack, args.position);
+    if (!createdArrangementClip) throw new Error("Ableton did not create the Arrangement audio clip");
+    createdArrangementClip.set("name", String(args.name));
+    return { trackIndex: arrangementTrack, position: Number(args.position) };
+  }
+
+  if (type === "set_arrangement_loop") {
+    set.set("loop_start", Number(args.start));
+    set.set("loop_length", Number(args.length));
+    set.set("loop", args.enabled ? 1 : 0);
+    return { enabled: !!args.enabled, start: Number(args.start), length: Number(args.length) };
   }
 
   throw new Error("unsupported command type: " + type);
