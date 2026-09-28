@@ -452,9 +452,21 @@ async fn run_system_check(state: State<'_, AppState>) -> Result<Value, String> {
         packages.push(service_builder::package_status(&root, &song)?);
     }
 
-    let bridge_state = bridge::state().await;
-    let bridge_connected = bridge_state.is_ok();
-    let bridge_error = bridge_state.err();
+    let bridge_health = bridge::health_info().await;
+    let bridge_connected = bridge_health.is_ok();
+    let bridge_error = bridge_health.as_ref().err().cloned();
+    let adapter_version = bridge_health
+        .as_ref()
+        .ok()
+        .and_then(|value| value.get("version"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let capabilities = bridge_health
+        .as_ref()
+        .ok()
+        .and_then(|value| value.get("capabilities"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
 
     Ok(json!({
         "libraryRoot": root.to_string_lossy().to_string(),
@@ -462,6 +474,8 @@ async fn run_system_check(state: State<'_, AppState>) -> Result<Value, String> {
         "templateExists": template.exists(),
         "bridgeConnected": bridge_connected,
         "bridgeError": bridge_error,
+        "adapterVersion": adapter_version,
+        "adapterCapabilities": capabilities,
         "songCount": packages.len(),
         "packages": packages
     }))
@@ -506,6 +520,24 @@ async fn build_service(
 
     if build_ableton {
         let build_result: Result<(), String> = async {
+            let health = bridge::health_info().await?;
+            let capabilities = health
+                .get("capabilities")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let has_builder = capabilities.iter().any(|value| value.as_str() == Some("arrangement-audio"));
+            let has_transpose = capabilities.iter().any(|value| value.as_str() == Some("transpose"));
+            if !has_builder || !has_transpose {
+                let version = health
+                    .get("version")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                return Err(format!(
+                    "Max adapter {} is outdated. Install Luma Live Max Adapter v0.6.1 or newer before building services.",
+                    version
+                ));
+            }
             bridge::send("clear_luma_arrangement", json!({})).await?;
 
             let mut ensured = std::collections::HashSet::new();
