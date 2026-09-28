@@ -19,10 +19,13 @@
 
       <nav class="nav">
         <button class="nav-item active" data-page="live">
-          <span>Live</span><small>Service status</small>
+          <span>Song Control</span><small>Arrangement performance</small>
+        </button>
+        <button class="nav-item" data-page="busk">
+          <span>Busk</span><small>Session View tools</small>
         </button>
         <button class="nav-item" data-page="songs">
-          <span>Songs</span><small>Reusable library</small>
+          <span>Library</span><small>Reusable songs</small>
         </button>
         <button class="nav-item" data-page="setlists">
           <span>Setlists</span><small>Build services</small>
@@ -43,51 +46,100 @@
     <main class="main">
       <header class="topbar">
         <div>
-          <span class="eyebrow" id="pageEyebrow">SERVICE</span>
-          <h1 id="pageTitle">Live</h1>
+          <span class="eyebrow" id="pageEyebrow">LIVE</span>
+          <h1 id="pageTitle">Song Control</h1>
         </div>
         <div class="top-status">
-          <div class="connection-pill"><span class="dot" id="serverDot"></span><span id="serverStatus">Starting local server</span></div>
+          <div class="connection-pill"><span class="dot" id="bridgeDot"></span><span id="bridgeStatus">Ableton offline</span></div>
+          <div class="connection-pill"><span class="dot" id="serverDot"></span><span id="serverStatus">Starting remote</span></div>
         </div>
       </header>
 
       <div id="error" class="error" hidden></div>
+      <div id="notice" class="notice" hidden></div>
 
       <section class="page active" data-page-panel="live">
-        <div class="hero-grid">
-          <article class="panel hero-panel">
+        <div class="desktop-transport">
+          <button id="desktopPlay" class="transport-action">▶ <span id="desktopPlayLabel">Play</span></button>
+          <button id="desktopStop" class="transport-action">■ Stop</button>
+          <button id="desktopClick" class="transport-action">● Click</button>
+          <div class="transport-metrics">
+            <div><span class="eyebrow">BPM</span><strong id="desktopTempo">--</strong></div>
+            <div><span class="eyebrow">BAR</span><strong id="desktopBar">--</strong></div>
+            <div><span class="eyebrow">METER</span><strong id="desktopMeter">--</strong></div>
+          </div>
+        </div>
+
+        <div class="live-grid">
+          <article class="panel live-song-panel">
             <div class="panel-heading">
-              <div><span class="eyebrow">CURRENT SERVICE</span><h2>No service loaded</h2></div>
-              <span class="badge">LOCAL</span>
+              <div>
+                <span class="eyebrow">CURRENT SONG</span>
+                <h2 id="desktopCurrentSong">No service loaded</h2>
+                <p id="desktopCurrentMeta" class="muted compact-copy">Load a setlist to begin.</p>
+              </div>
+              <div class="song-nav">
+                <button id="desktopPrevSong" class="quiet">← Song</button>
+                <button id="desktopNextSong" class="quiet">Song →</button>
+              </div>
             </div>
-            <div class="hero-empty">
-              <strong>Your library now lives on this Mac.</strong>
-              <p>Build a setlist, then connect Ableton when you are ready. Song and service preparation works with no internet connection.</p>
-              <button class="primary" data-go="setlists">Build a Setlist</button>
+
+            <div class="desktop-progress"><div id="desktopProgress"></div></div>
+
+            <div class="desktop-now-next">
+              <div><span class="eyebrow">NOW</span><strong id="desktopCurrentSection">—</strong></div>
+              <div><span class="eyebrow">NEXT</span><strong id="desktopNextSection">—</strong></div>
             </div>
+
+            <div class="section-step-row">
+              <button id="desktopPrevSection">← Previous Section</button>
+              <button id="desktopNextSectionBtn" class="primary">Next Section →</button>
+            </div>
+            <div id="desktopSectionGrid" class="desktop-section-grid"></div>
           </article>
 
-          <article class="panel">
+          <article class="panel service-panel">
             <div class="panel-heading">
-              <div><span class="eyebrow">ABLETON</span><h3>Bridge</h3></div>
-              <span class="connection-state waiting">NEXT</span>
+              <div><span class="eyebrow">SERVICE</span><h3 id="desktopServiceTitle">No setlist loaded</h3></div>
+              <span id="desktopServiceCount" class="counter">0</span>
             </div>
-            <p class="muted">The existing Max for Live bridge remains separate in this pass. The desktop app is now the permanent library and LAN host.</p>
+            <div id="desktopServiceOrder" class="rows"></div>
           </article>
         </div>
 
-        <div class="metric-grid">
-          <article class="metric"><span class="eyebrow">SONGS</span><strong id="liveSongCount">0</strong><small>saved locally</small></article>
-          <article class="metric"><span class="eyebrow">SETLISTS</span><strong id="liveSetlistCount">0</strong><small>saved services</small></article>
-          <article class="metric wide"><span class="eyebrow">REMOTE</span><strong id="liveRemoteUrl">Starting…</strong><small>Open this on an iPad on the same network</small></article>
-        </div>
+        <article class="panel desktop-mixer-panel">
+          <div class="panel-heading">
+            <div><span class="eyebrow">TRACK CONTROL</span><h3>Arrangement Mixer</h3></div>
+            <span class="muted compact-copy">Volume · mute · solo</span>
+          </div>
+          <div id="desktopMixer" class="desktop-mixer"></div>
+        </article>
 
+        <article class="panel plain-language-panel">
+          <div class="panel-heading">
+            <div><span class="eyebrow">PLAIN LANGUAGE</span><h3>Tell Luma Live what to do</h3></div>
+          </div>
+          <div class="plain-command-row">
+            <input id="plainCommand" placeholder="Next section, mute BGV, load Sunday AM, set tempo to 72…">
+            <button id="plainRun" class="primary">Run</button>
+          </div>
+          <div class="plain-examples">
+            <button data-plain="next section">Next section</button>
+            <button data-plain="next song">Next song</button>
+            <button data-plain="click on">Click on</button>
+            <button data-plain="mute guide">Mute Guide</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="page" data-page-panel="busk">
         <article class="panel">
           <div class="panel-heading">
-            <div><span class="eyebrow">RECENT</span><h3>Setlists</h3></div>
-            <button class="quiet" data-go="setlists">Open Builder</button>
+            <div><span class="eyebrow">SESSION VIEW</span><h2>Busk</h2></div>
+            <button id="desktopStopAll" class="panic">STOP ALL</button>
           </div>
-          <div id="recentSetlists" class="rows"></div>
+          <p class="muted">Pads, vamps, shout loops, altar moments, walk-in music, and other spontaneous Session View tools live here.</p>
+          <div id="desktopSceneGrid" class="desktop-scene-grid"></div>
         </article>
       </section>
 
@@ -153,7 +205,10 @@
 
             <div class="actions">
               <button id="deleteSetlist" class="danger-link" hidden>Delete</button>
-              <button id="saveSetlist" class="primary">Save Setlist</button>
+              <div class="action-cluster">
+                <button id="syncSetlist" class="quiet" disabled>Sync to Ableton</button>
+                <button id="saveSetlist" class="primary">Save Setlist</button>
+              </div>
             </div>
           </article>
 
@@ -172,21 +227,27 @@
           <article class="panel">
             <span class="eyebrow">LOCAL DATABASE</span>
             <h3>Offline Library</h3>
-            <p class="muted">Songs and setlists are stored in SQLite on this Mac. Closing Ableton or losing internet does not remove access to the library.</p>
+            <p class="muted">Songs and setlists live in one SQLite database. Max no longer owns a second song library.</p>
             <div class="detail"><span>Database</span><code id="databasePath">Loading…</code></div>
           </article>
 
           <article class="panel">
             <span class="eyebrow">IPAD REMOTE</span>
             <h3>Local Network</h3>
-            <p class="muted">Open the address below from a device connected to the same Wi-Fi or Ethernet network.</p>
+            <p class="muted">The Mac app owns the remote server on port 7878. Open the full tokenized link on the iPad.</p>
             <div id="remoteLinks" class="remote-links"></div>
+          </article>
+
+          <article class="panel">
+            <span class="eyebrow">ABLETON ADAPTER</span>
+            <h3>Localhost Only</h3>
+            <p class="muted">Luma Live.amxd talks only to this Mac at <code>127.0.0.1:17878</code>. It does not host another iPad website.</p>
           </article>
 
           <article class="panel">
             <span class="eyebrow">INTERNET</span>
             <h3>Optional</h3>
-            <p class="muted">Core show preparation is local-first. Internet access can later be used for updates, Planning Center, backups, or cloud sync, but it is not required to open Luma Live.</p>
+            <p class="muted">Core show preparation and live control remain local-first. Internet is not required for the library or same-network remote.</p>
           </article>
         </div>
       </section>
