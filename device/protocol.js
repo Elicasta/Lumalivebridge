@@ -20,7 +20,11 @@ const COMMAND_TYPES = Object.freeze([
   "set_track_mute",
   "set_track_solo",
   "sync_cue_points",
-  "jump_to_time"
+  "jump_to_time",
+  "ensure_track",
+  "clear_luma_arrangement",
+  "create_arrangement_audio_clip",
+  "set_arrangement_loop"
 ]);
 
 const USER_COMMAND_TYPES = Object.freeze(
