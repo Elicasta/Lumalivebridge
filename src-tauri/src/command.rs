@@ -831,6 +831,7 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
             items.push(SetlistItemInput {
                 id: None,
                 song_id: song.id.clone(),
+                transition: Default::default(),
             });
         }
 
@@ -879,6 +880,7 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
                     Some(SetlistItemInput {
                         id: Some(item.id.clone()),
                         song_id: item.song_id.clone(),
+                        transition: item.transition.clone(),
                     })
                 }
             })
@@ -951,12 +953,14 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
             .map(|item| SetlistItemInput {
                 id: Some(item.id.clone()),
                 song_id: item.song_id.clone(),
+                transition: item.transition.clone(),
             })
             .collect();
 
         let new_item = SetlistItemInput {
             id: None,
             song_id: song.id.clone(),
+            transition: Default::default(),
         };
 
         if let Some(after_name) = after_name {
@@ -1113,7 +1117,7 @@ mod tests {
                 id: None,
                 title: "Sunday AM".into(),
                 gap_bars: 4,
-                items: vec![SetlistItemInput { id: None, song_id: song.id }],
+                items: vec![SetlistItemInput { id: None, song_id: song.id, transition: Default::default() }],
             })
             .unwrap();
 
