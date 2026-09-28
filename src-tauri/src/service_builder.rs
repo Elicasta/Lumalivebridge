@@ -51,6 +51,18 @@ pub struct ServiceAudioPlacement {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ServiceCuePlacement {
+    pub song_id: String,
+    pub instance_id: String,
+    pub kind: String,
+    pub source_path: String,
+    pub collected_path: String,
+    pub beat: f64,
+    pub section_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServiceBuildManifest {
     pub schema_version: i64,
     pub service_id: String,
@@ -58,6 +70,7 @@ pub struct ServiceBuildManifest {
     pub build_id: String,
     pub arrangement: Arrangement,
     pub audio: Vec<ServiceAudioPlacement>,
+    pub cues: Vec<ServiceCuePlacement>,
     pub warnings: Vec<String>,
 }
 
@@ -69,6 +82,7 @@ pub struct ServiceBuildResult {
     pub manifest_path: String,
     pub template_als: Option<String>,
     pub audio: Vec<ServiceAudioPlacement>,
+    pub cues: Vec<ServiceCuePlacement>,
     pub warnings: Vec<String>,
 }
 
@@ -340,6 +354,7 @@ pub fn build_service_folder(
             .collect();
 
     let mut audio = Vec::new();
+    let mut cues = Vec::new();
     let mut warnings = Vec::new();
 
     for (index, item) in setlist.items.iter().enumerate() {
@@ -387,6 +402,41 @@ pub fn build_service_folder(
                 clip_name: format!("LL|{}|{}", song.title, stem.role.to_uppercase()),
             });
         }
+
+        for cue in manifest.cues {
+            let source = package.join(&cue.file);
+            let destination = collected.join(&cue.file);
+            if !source.exists() {
+                warnings.push(format!("{} is missing cue file {}", song.title, cue.file));
+                continue;
+            }
+
+            let base_beat = if let Some(section_id) = cue.section_id.as_deref() {
+                placement
+                    .sections
+                    .iter()
+                    .find(|section| section.id == section_id)
+                    .map(|section| section.start_beat)
+                    .ok_or_else(|| {
+                        format!(
+                            "{} cue {} references missing section {}",
+                            song.title, cue.file, section_id
+                        )
+                    })?
+            } else {
+                placement.start_beat
+            };
+
+            cues.push(ServiceCuePlacement {
+                song_id: song.id.clone(),
+                instance_id: item.id.clone(),
+                kind: cue.kind.clone(),
+                source_path: source.to_string_lossy().to_string(),
+                collected_path: destination.to_string_lossy().to_string(),
+                beat: base_beat + cue.beat_offset.max(0.0),
+                section_id: cue.section_id.clone(),
+            });
+        }
     }
 
     let template = root.join("Templates").join("Church Standard.als");
@@ -409,6 +459,7 @@ pub fn build_service_folder(
         build_id: build_id.clone(),
         arrangement,
         audio: audio.clone(),
+        cues: cues.clone(),
         warnings: warnings.clone(),
     };
     let manifest_path = build_root.join("service.json");
@@ -424,6 +475,7 @@ pub fn build_service_folder(
         manifest_path: manifest_path.to_string_lossy().to_string(),
         template_als,
         audio,
+        cues,
         warnings,
     })
 }
