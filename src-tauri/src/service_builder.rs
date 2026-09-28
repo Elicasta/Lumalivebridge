@@ -59,6 +59,7 @@ pub struct ServiceAudioPlacement {
     pub collected_path: String,
     pub start_beat: f64,
     pub clip_name: String,
+    pub transpose_semitones: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -176,6 +177,13 @@ fn default_track(role: &str) -> &'static str {
         "extra2" | "extra 2" => "EXTRA 2",
         _ => "EXTRA 1",
     }
+}
+
+fn role_is_transposable(role: &str) -> bool {
+    matches!(
+        role.trim().to_lowercase().as_str(),
+        "bass" | "keys" | "guitars" | "bgv" | "extra1" | "extra2"
+    )
 }
 
 fn role_from_filename(path: &Path) -> String {
@@ -578,6 +586,11 @@ pub fn build_service_folder(
                 collected_path: destination.to_string_lossy().to_string(),
                 start_beat: placement.start_beat,
                 clip_name: format!("LL|{}|{}", song.title, stem.role.to_uppercase()),
+                transpose_semitones: if role_is_transposable(&stem.role) {
+                    item.transpose_semitones
+                } else {
+                    0
+                },
             });
         }
 
