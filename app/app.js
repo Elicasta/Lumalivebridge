@@ -645,7 +645,9 @@
     $("databasePath").textContent = runtime.databasePath || "Unavailable";
     if (runtime.startupWarning) showError(runtime.startupWarning);
     $("serverDot").className = "dot " + (runtime.serverRunning ? "ready" : "waiting");
-    $("serverStatus").textContent = runtime.serverRunning ? "Remote ready · 7878" : "Starting remote";
+    $("serverStatus").textContent = runtime.serverRunning
+      ? "Remote ready · " + (runtime.port || "LAN")
+      : "Starting remote";
 
     const links = runtime.localUrls || [];
     const host = $("remoteLinks");
