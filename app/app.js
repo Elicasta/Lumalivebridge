@@ -19,7 +19,8 @@
     sectionSignature: "",
     sceneSignature: "",
     buskSignature: "",
-    packageStatuses: {}
+    packageStatuses: {},
+    lastBuildFolder: null
   };
 
   const volumeTimers = new Map();
@@ -1114,6 +1115,15 @@
       });
       await Promise.all([loadLibrary(), loadRuntime(), loadLive()]);
       const warnings = result.service && result.service.warnings || [];
+      const serviceResult = result.service || {};
+      state.lastBuildFolder = serviceResult.serviceFolder || null;
+      $("buildResultPanel").hidden = !state.lastBuildFolder;
+      $("buildResultPath").textContent = state.lastBuildFolder || "";
+      $("buildResultSummary").textContent =
+        (serviceResult.audio ? serviceResult.audio.length : 0) + " audio placements · " +
+        (serviceResult.cues ? serviceResult.cues.length : 0) + " cue placements · " +
+        (result.abletonBuilt ? "Ableton built" : "folder built");
+
       if (result.abletonBuilt) {
         showNotice("Service folder built and stems placed into Ableton.");
       } else {
@@ -1130,6 +1140,15 @@
       $("buildService").textContent = "Build Service + Ableton";
     }
   });
+  $("openBuildFolder").addEventListener("click", async () => {
+    if (!state.lastBuildFolder) return;
+    try {
+      await invoke("reveal_service_build", { path: state.lastBuildFolder });
+    } catch (error) {
+      showError(error);
+    }
+  });
+
   $("deleteSetlist").addEventListener("click", async () => {
     if (!state.editingSetlistId || !confirm("Delete this setlist?")) return;
     const deletingId = state.editingSetlistId;
@@ -1238,7 +1257,9 @@
       host.innerHTML =
         '<div class="check-row ' + (result.libraryWritable ? "pass" : "fail") + '"><strong>Library write access</strong><span>' + (result.libraryWritable ? "PASS" : "FAIL") + '</span></div>' +
         '<div class="check-row ' + (result.templateExists ? "pass" : "warn") + '"><strong>Church Standard.als</strong><span>' + (result.templateExists ? "FOUND" : "MISSING") + '</span></div>' +
-        '<div class="check-row ' + (result.bridgeConnected ? "pass" : "fail") + '"><strong>Ableton adapter</strong><span>' + (result.bridgeConnected ? "CONNECTED" : "OFFLINE") + '</span></div>' +
+        '<div class="check-row ' + (result.bridgeConnected ? "pass" : "fail") + '"><strong>Ableton adapter' +
+          (result.adapterVersion ? " · v" + escapeHtml(result.adapterVersion) : "") +
+          '</strong><span>' + (result.bridgeConnected ? "CONNECTED" : "OFFLINE") + '</span></div>' +
         '<div class="check-row ' + (ready === packages.length && packages.length ? "pass" : "warn") + '"><strong>Song packages</strong><span>' + ready + " / " + packages.length + ' READY</span></div>' +
         packages.map((item) =>
           '<div class="package-check"><strong>' + escapeHtml((state.songs.find((song) => song.id === item.songId) || {}).title || item.songId) + '</strong><small>' +
