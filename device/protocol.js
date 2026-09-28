@@ -24,6 +24,7 @@ const COMMAND_TYPES = Object.freeze([
   "ensure_track",
   "clear_luma_arrangement",
   "create_arrangement_audio_clip",
+  "create_arrangement_midi_clip",
   "set_arrangement_loop"
 ]);
 
