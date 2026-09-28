@@ -248,6 +248,20 @@ function validateCommand(input, options = {}) {
       break;
     }
 
+    case "create_arrangement_midi_clip": {
+      const position = finiteNumber(args.position, "create_arrangement_midi_clip.position");
+      const lengthBeats = finiteNumber(args.lengthBeats, "create_arrangement_midi_clip.lengthBeats");
+      if (position < 0 || position > 1576800) throw new Error("Arrangement MIDI clip position is out of range");
+      if (lengthBeats <= 0 || lengthBeats > 65536) throw new Error("Arrangement MIDI clip length is out of range");
+      normalized = {
+        track: target(args.track, "create_arrangement_midi_clip.track"),
+        position,
+        lengthBeats,
+        name: cleanName(args.name, "create_arrangement_midi_clip.name")
+      };
+      break;
+    }
+
     case "set_arrangement_loop": {
       const enabled = bool(args.enabled, "set_arrangement_loop.enabled");
       const start = finiteNumber(args.start == null ? 0 : args.start, "set_arrangement_loop.start");
