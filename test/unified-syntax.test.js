@@ -87,6 +87,8 @@ test("desktop recurring poll does not recursively rescan song packages", () => {
   const js = fs.readFileSync(path.join(__dirname, "..", "app", "app.js"), "utf8");
   assert.match(js, /async function loadPackageStatuses/);
   assert.match(js, /setInterval\(\(\) => loadLibrary/);
-  const libraryFn = js.slice(js.indexOf("async function loadLibrary"), js.indexOf("async function loadRuntime"));
+  const libraryStart = js.indexOf("async function loadLibrary");
+  const packageStart = js.indexOf("async function loadPackageStatuses", libraryStart);
+  const libraryFn = js.slice(libraryStart, packageStart);
   assert.doesNotMatch(libraryFn, /get_song_package_statuses/);
 });
