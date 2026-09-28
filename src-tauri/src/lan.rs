@@ -405,7 +405,7 @@ async fn jump(
     )
     .await
     .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
-    bridge::send("jump_to_time", json!({ "time": time }))
+    bridge::jump_to_time(time)
         .await
         .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
 
