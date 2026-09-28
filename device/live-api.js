@@ -598,7 +598,11 @@ function execute(command) {
     createdArrangementClip.set("name", String(args.name));
     var transposeSemitones = Number(args.transposeSemitones || 0);
     if (transposeSemitones !== 0) {
-      try { createdArrangementClip.set("pitch_coarse", transposeSemitones); } catch (_) {}
+      try {
+        createdArrangementClip.set("warping", 1);
+        createdArrangementClip.set("warp_mode", 4);
+        createdArrangementClip.set("pitch_coarse", transposeSemitones);
+      } catch (_) {}
     }
     return {
       trackIndex: arrangementTrack,
