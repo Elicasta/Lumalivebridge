@@ -14,6 +14,7 @@
     editingSongId: null,
     editingSetlistId: null,
     draftItems: [],
+    pendingPlainText: null,
     mixerSignature: "",
     sectionSignature: "",
     sceneSignature: ""
@@ -579,6 +580,35 @@
     }
   }
 
+  function clearPlainPreview() {
+    state.pendingPlainText = null;
+    $("plainPreviewPanel").hidden = true;
+    $("plainPreviewSummary").textContent = "—";
+    $("plainPreviewMeta").textContent = "";
+  }
+
+  async function previewPlain(text) {
+    const value = String(text || "").trim();
+    if (!value) return;
+    $("plainPreview").disabled = true;
+    showError("");
+    try {
+      const preview = await invoke("preview_plain_command", { text: value });
+      state.pendingPlainText = value;
+      $("plainPreviewSummary").textContent = preview.summary || "Ready to apply";
+      $("plainPreviewMeta").textContent = [
+        preview.requiresAbleton ? "ABLETON" : "LOCAL",
+        preview.changesLibrary ? "CHANGES LIBRARY" : "LIVE CONTROL"
+      ].join(" · ");
+      $("plainPreviewPanel").hidden = false;
+    } catch (error) {
+      clearPlainPreview();
+      showError(error);
+    } finally {
+      $("plainPreview").disabled = false;
+    }
+  }
+
   async function runPlain(text) {
     const value = String(text || "").trim();
     if (!value) return;
@@ -597,6 +627,7 @@
       if (data.state) state.live = data.state;
       renderLive();
       $("plainCommand").value = "";
+      clearPlainPreview();
       showNotice(data.result && data.result.summary ? data.result.summary : "Command completed.");
     } catch (error) {
       showError(error);
@@ -713,15 +744,24 @@
   $("desktopPrevSection").addEventListener("click", () => jumpAdjacentSection(-1));
   $("desktopNextSectionBtn").addEventListener("click", () => jumpAdjacentSection(1));
 
+  $("plainPreview").addEventListener("click", () => previewPlain($("plainCommand").value));
   $("plainRun").addEventListener("click", () => runPlain($("plainCommand").value));
+  $("plainApply").addEventListener("click", () => {
+    if (state.pendingPlainText) runPlain(state.pendingPlainText);
+  });
+  $("plainCancel").addEventListener("click", clearPlainPreview);
+  $("plainCommand").addEventListener("input", clearPlainPreview);
   $("plainCommand").addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      runPlain($("plainCommand").value);
+      previewPlain($("plainCommand").value);
     }
   });
   document.querySelectorAll("[data-plain]").forEach((button) => {
-    button.addEventListener("click", () => runPlain(button.dataset.plain));
+    button.addEventListener("click", () => {
+      $("plainCommand").value = button.dataset.plain;
+      previewPlain(button.dataset.plain);
+    });
   });
 
   resetSongEditor();
