@@ -24,6 +24,8 @@ const COMMAND_TYPES = Object.freeze([
   "jump_to_time",
   "queue_jump_to_time",
   "ensure_track",
+  "begin_bulk_update",
+  "end_bulk_update",
   "clear_luma_arrangement",
   "create_arrangement_audio_clip",
   "create_arrangement_midi_clip",
