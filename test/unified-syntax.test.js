@@ -7,6 +7,7 @@ const path = require("node:path");
 
 for (const relative of [
   ["remote", "app.js"],
+  ["app", "app.js"],
   ["device", "node-bridge.js"],
   ["device", "validator.js"],
   ["device", "protocol.js"]
