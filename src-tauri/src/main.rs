@@ -3,6 +3,7 @@ mod bridge;
 mod command;
 mod db;
 mod lan;
+mod migration;
 mod models;
 mod state;
 
@@ -265,6 +266,12 @@ fn main() {
                     Arc::new(Database::open_in_memory().map_err(std::io::Error::other)?)
                 }
             };
+
+            match migration::migrate_if_empty(db.as_ref()) {
+                Ok(Some(message)) => append_diagnostic(&message),
+                Ok(None) => {}
+                Err(error) => append_diagnostic(&format!("legacy migration skipped: {error}")),
+            }
 
             let token = Arc::new(load_or_create_token(&app_dir));
             let runtime = Arc::new(RwLock::new(RuntimeInfo {
