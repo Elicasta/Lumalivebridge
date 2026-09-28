@@ -1,6 +1,12 @@
 autowatch = 1;
 outlets = 1;
 
+var serviceTimeline = { songs: [], transitions: [] };
+var serviceTimelineTask = null;
+var serviceTimelineSongIndex = -1;
+var serviceTimelineVampIndex = -1;
+var serviceTimelineHolds = {};
+
 function asScalar(value, property) {
   if (value instanceof Array) {
     if (value.length === 0) return null;
@@ -229,6 +235,96 @@ function snapshot() {
   };
 }
 
+function stopServiceTimelineTask() {
+  if (serviceTimelineTask) {
+    try { serviceTimelineTask.cancel(); } catch (_) {}
+    serviceTimelineTask = null;
+  }
+}
+
+function serviceSongAt(time) {
+  var index = -1;
+  for (var i = 0; i < serviceTimeline.songs.length; i++) {
+    if (Number(time) + 0.0001 >= Number(serviceTimeline.songs[i].startBeat)) index = i;
+    else break;
+  }
+  return index;
+}
+
+function releaseServiceLoop() {
+  var set = live("live_set");
+  try { set.set("loop", 0); } catch (_) {}
+  serviceTimelineVampIndex = -1;
+}
+
+function runServiceTimeline() {
+  if (!serviceTimeline.songs.length) return;
+  try {
+    var set = live("live_set");
+    var time = Number(getProp(set, "current_song_time"));
+    var songIndex = serviceSongAt(time);
+
+    if (songIndex >= 0 && songIndex !== serviceTimelineSongIndex) {
+      var song = serviceTimeline.songs[songIndex];
+      set.set("tempo", Number(song.bpm));
+      set.set("signature_numerator", Number(song.numerator));
+      set.set("signature_denominator", Number(song.denominator));
+      serviceTimelineSongIndex = songIndex;
+      if (serviceTimelineVampIndex >= 0) releaseServiceLoop();
+    }
+
+    for (var i = 0; i < serviceTimeline.transitions.length; i++) {
+      var transition = serviceTimeline.transitions[i];
+      if (transition.mode !== "vamp") continue;
+      var loopStart = Number(transition.vampStartBeat);
+      var loopEnd = Number(transition.vampEndBeat);
+      if (!isFinite(loopStart) || !isFinite(loopEnd) || loopEnd <= loopStart) continue;
+      if (time + 0.01 >= loopStart && time < loopEnd && serviceTimelineVampIndex !== i) {
+        set.set("loop_start", loopStart);
+        set.set("loop_length", loopEnd - loopStart);
+        set.set("loop", 1);
+        serviceTimelineVampIndex = i;
+      }
+    }
+
+    if (Number(getProp(set, "is_playing")) !== 1) return;
+
+    for (var h = 0; h < serviceTimeline.transitions.length; h++) {
+      var hold = serviceTimeline.transitions[h];
+      if (hold.mode !== "hold" || serviceTimelineHolds[h]) continue;
+      var trigger = Number(hold.triggerBeat);
+      var nextStart = Number(hold.nextStartBeat);
+      if (!isFinite(trigger) || !isFinite(nextStart)) continue;
+      if (time + 0.015 >= trigger && time < trigger + 0.5) {
+        set.call("stop_playing");
+        set.set("current_song_time", nextStart);
+        serviceTimelineHolds[h] = 1;
+        pushState();
+        break;
+      }
+    }
+  } catch (_) {}
+}
+
+function configureServiceTimeline(args) {
+  serviceTimeline = {
+    songs: (args.songs || []).slice().sort(function(a, b) { return Number(a.startBeat) - Number(b.startBeat); }),
+    transitions: (args.transitions || []).slice()
+  };
+  serviceTimelineSongIndex = -1;
+  serviceTimelineVampIndex = -1;
+  serviceTimelineHolds = {};
+  releaseServiceLoop();
+  stopServiceTimelineTask();
+
+  if (serviceTimeline.songs.length) {
+    serviceTimelineTask = new Task(runServiceTimeline, this);
+    serviceTimelineTask.interval = 20;
+    serviceTimelineTask.repeat();
+    runServiceTimeline();
+  }
+}
+
 function result(requestId, ok, extra) {
   var payload = {
     requestId: requestId,
@@ -407,6 +503,7 @@ function execute(command) {
   }
 
   if (type === "jump_to_time") {
+    releaseServiceLoop();
     set.set("current_song_time", Number(args.time));
     return { time: Number(args.time) };
   }
@@ -442,6 +539,11 @@ function execute(command) {
       position: Number(args.position),
       lengthBeats: Number(args.lengthBeats)
     };
+  }
+
+  if (type === "configure_service_timeline") {
+    configureServiceTimeline(args);
+    return { songs: args.songs.length, transitions: args.transitions.length };
   }
 
   if (type === "set_arrangement_loop") {
