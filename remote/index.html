@@ -82,7 +82,12 @@
           <div><span class="eyebrow">ARRANGEMENT</span><h3 id="currentSong">No service loaded</h3></div>
           <span id="songPosition" class="pill">—</span>
         </div>
-        <p id="songMeta" class="muted">Load a setlist from the Mac app to enable song sections.</p>
+        <p id="songMeta" class="muted">Choose a service below to enable song and section control.</p>
+        <div class="service-loader">
+          <select id="serviceSelect" aria-label="Service setlist"></select>
+          <button id="serviceLoadBtn" class="primary">Load Service</button>
+        </div>
+        <p id="serviceHelp" class="microcopy">You can load and sync a saved Luma Live setlist directly from the iPad.</p>
         <div class="now-next">
           <article><span class="eyebrow">NOW</span><strong id="currentSection">—</strong></article>
           <article><span class="eyebrow">NEXT</span><strong id="nextSection">—</strong></article>
