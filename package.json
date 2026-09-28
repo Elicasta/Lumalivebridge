@@ -1,6 +1,6 @@
 {
   "name": "luma-live",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "Unified offline-first church show control with Arrangement song control, Busk, local library, LAN remote, and Ableton adapter",
   "scripts": {
