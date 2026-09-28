@@ -292,8 +292,19 @@ fn main() {
             app.manage(state.clone());
 
             tauri::async_runtime::spawn(async move {
+                let server_state = state.clone();
                 if let Err(error) = lan::run_server(state).await {
-                    eprintln!("Luma Live LAN server failed: {error}");
+                    let message = format!(
+                        "Luma Live could not start the remote on port 7878 ({error}). If the old Max bridge is still loaded, update/reload it so it uses the private 127.0.0.1:17878 adapter port."
+                    );
+                    append_diagnostic(&format!("LAN server failed: {message}"));
+                    eprintln!("{message}");
+                    if let Ok(mut runtime) = server_state.runtime.write() {
+                        runtime.server_running = false;
+                        runtime.port = None;
+                        runtime.local_urls.clear();
+                        runtime.startup_warning = Some(message);
+                    }
                 }
             });
 
