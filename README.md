@@ -1,91 +1,81 @@
 # Luma Live
 
-Luma Live is an offline-first church show-control system for macOS.
+Luma Live is one offline-first church show-control application for macOS, Ableton Live, and an iPad/browser remote.
 
-The Mac app owns the permanent local song library, saved setlists, and same-network remote server. Ableton Live remains the playback engine and connects through the existing Max for Live bridge.
+The desktop app is the single source of truth for songs, sections, setlists, the active service, and the LAN remote. Max for Live is now a private Ableton adapter instead of a second app.
 
-## v0.3 direction
-
-The product is now split into clear layers:
+## Canonical architecture
 
 ```text
-Luma Live.app
+iPad / browser
+      |
+      | same-network HTTP
+      v
+Luma Live.app :7878
+  ├─ Song Control
+  ├─ Busk
   ├─ SQLite song library
-  ├─ saved setlists
-  ├─ built-in LAN server
-  ├─ desktop UI
-  └─ iPad/iPhone remote
-          |
-          | local network only
-          v
-      Remote PWA
-
+  ├─ Setlists / active service
+  ├─ Arrangement engine
+  ├─ Plain-language command layer
+  └─ LAN remote host
+      |
+      | localhost only
+      v
+127.0.0.1:17878
+      |
+Luma Live.amxd
+      |
+Ableton LiveAPI
+      |
 Ableton Live
-  └─ Luma Live Bridge.amxd
 ```
 
-Core library and setlist work does not require internet access.
+There is no second Max-hosted iPad site and no second Max-owned song library.
 
-## Desktop app
+## v0.4 pages
 
-The macOS application is built with Tauri and lives in:
+### Song Control
 
-```text
-src-tauri/
-```
+Song Control is the main Arrangement performance page.
 
-The desktop interface lives in:
+It includes:
 
-```text
-app/
-```
+- current song
+- current section and next section
+- previous / next song
+- previous / next section
+- reusable section buttons
+- bar / beat and song progress
+- Play / Stop
+- metronome
+- BPM and meter
+- track volume
+- track mute / solo
+- active service order
+- plain-language commands
 
-The same-network remote is bundled from:
+### Busk
 
-```text
-remote/
-```
+Busk is intentionally separate from Song Control.
 
-Run locally:
+It exposes Session View scenes for spontaneous moments such as:
 
-```bash
-npm install
-npm run desktop:dev
-```
+- pads
+- vamps
+- prayer
+- shout loops
+- altar
+- walk-in music
+- other live clips
 
-Build an app and DMG:
+Busk also includes **Stop All**.
 
-```bash
-npm run desktop:build
-```
+### Library
 
-## Offline storage
+Songs live permanently in the desktop SQLite database.
 
-Songs and setlists are stored in SQLite in the macOS application data directory.
-
-The exact database path is shown inside **Settings → Local Database**.
-
-The app can open, browse songs, edit songs, build setlists, and serve its iPad remote without an internet connection.
-
-## Same-network remote
-
-When Luma Live launches, it starts a local server.
-
-It tries port `7878` first and automatically moves through `7897` if that port is already in use.
-
-The Mac app shows a copyable address such as:
-
-```text
-http://192.168.1.42:7879/
-```
-
-The full copied URL includes the local access token. Open it on an iPad or iPhone connected to the same network.
-
-If the internet goes down but the local Wi-Fi/Ethernet network remains up, the remote still works.
-
-## Song Library
-
-A saved song contains:
+A song contains:
 
 - title
 - artist
@@ -93,7 +83,7 @@ A saved song contains:
 - key
 - meter
 - total length in bars
-- reusable sections
+- named sections with start bars
 
 Example:
 
@@ -106,74 +96,144 @@ Bridge @ 57
 Vamp @ 81
 ```
 
-The sections stay with the song every time it is used in a setlist.
+Stems and cue assets are planned additions to this same canonical song record. They are not imported automatically yet.
 
-## Setlist Builder
+### Setlists
 
-Saved songs can be placed into a service setlist, reordered, and reused.
+A setlist is a service-specific ordered list of reusable songs.
 
-This is the permanent layer that will feed the Ableton Arrangement sync rather than rebuilding every song by hand each week.
-
-## Ableton bridge
-
-The previous bridge implementation remains under:
+When a setlist is synced, Luma builds an Arrangement map and sends namespaced Ableton locators:
 
 ```text
-device/
+LL|SONG|<songId>|<title>
+LL|SECTION|<songId>|<sectionId>|<sectionName>
 ```
 
-That layer already contains the LiveAPI command bridge, command validator, browser remote, and the v0.2 Arrangement locator work.
+Repeated appearances of the same song remain distinct through the setlist item's `instanceId`.
 
-The next integration step is to make the Tauri app the only LAN-facing server and connect it privately to the Max for Live device over localhost.
+## Plain-language control
 
-That will give the final shape:
+The command bar is available from Song Control on both the Mac and remote.
+
+Examples currently supported include:
 
 ```text
-iPad
-  ↓
-Luma Live.app
-  ↓
-Ableton bridge
-  ↓
-Ableton Live
+next section
+previous section
+next song
+go to bridge
+set tempo to 72
+set meter to 6/8
+click on
+click off
+mute guide
+unmute guide
+solo keys
+set BGV volume to 45%
+load Sunday AM
+add Gratitude to Sunday AM after Hineh Ma Tov
+make Bridge start at bar 65
+panic
 ```
 
-The iPad will no longer communicate directly with Max.
+Song creation is also local:
 
-## Existing Arrangement sync work
+```text
+create a song called Gratitude at 68 bpm in 4/4 with Intro 8 bars, Verse 8 bars, Chorus 8 bars, Bridge x2 8 bars, Vamp 8 bars
+```
 
-The v0.2 bridge already includes:
+And the standard church track layout can be created in Ableton with an explicit session command.
 
-- reusable song metadata
-- setlists
-- namespaced `LL|` song and section locators
-- current song / current section detection
-- exact section jump targets
-- repeated-song-safe setlist instances
+The command grammar is intentionally allowlisted. It does not run arbitrary shell commands or arbitrary code.
 
-See:
+## One local database
 
-- [Desktop architecture](docs/DESKTOP.md)
-- [Song Library and Arrangement Sync](docs/SONG-LIBRARY.md)
+The desktop app owns SQLite.
 
-## Tests
+The exact path is displayed under **Settings → Local Database**.
 
-Node bridge tests:
+On first launch with an empty SQLite library, v0.4 can import legacy Luma data from:
+
+```text
+~/Library/Application Support/LumaLiveBridge/library/
+~/Library/Application Support/LumaLiveBridge/library.json
+```
+
+This migration does not overwrite a non-empty canonical SQLite library.
+
+## Network ownership
+
+### Public LAN host
+
+Only the Mac app listens publicly:
+
+```text
+0.0.0.0:7878
+```
+
+The Settings page shows the tokenized URL to copy to an iPad on the same Wi-Fi or Ethernet network.
+
+### Private Ableton adapter
+
+The Max device listens only on:
+
+```text
+127.0.0.1:17878
+```
+
+It exposes only the private state/command adapter needed by Luma Live.app.
+
+## Arrangement timing
+
+Arrangement positions are calculated from song meter, including the denominator.
+
+For example, a 6/8 bar occupies three quarter-note beats in Ableton's timeline while the UI reports denominator-relative beats within the bar.
+
+## Development
+
+Desktop app:
+
+```bash
+npm install
+npm run desktop:dev
+```
+
+Tests:
 
 ```bash
 npm test
-```
-
-macOS desktop compile check:
-
-```bash
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
-GitHub Actions runs both on the relevant changes.
+Build:
 
-## Current boundary
+```bash
+npm run desktop:build
+```
 
-v0.3 establishes the offline Mac app, local database, song/setlist editor, and built-in LAN remote.
+The macOS CI build re-signs the development app with a 4096-byte code-signing page size, verifies the signature, launches the built executable for a smoke test, and only then creates the DMG.
 
-Audio stem import and the private desktop-to-Ableton connection are the next implementation layers. We are intentionally not writing raw Ableton `.als` XML for routine service builds.
+## Current boundaries
+
+The unified architecture is implemented in the `feature/unified-luma-live` branch, but the following still require real Ableton/macOS runtime validation before being treated as finished:
+
+- the new app → localhost Max → LiveAPI path
+- LiveAPI locator creation/deletion on the user's actual Ableton version
+- track volume state and fader writes
+- transport / metronome writes
+- repeated-song section navigation during a real service
+- behavior when Ableton closes/reopens while Luma Live stays open
+
+Also not implemented yet:
+
+- next-bar quantized section jumps
+- WAV/stem folder import
+- MultiTracks folder import
+- Guide speech section detection
+- Bonjour / mDNS discovery
+- QR pairing
+- native iPad app
+- Apple Developer signing/notarization
+- cloud sync
+
+Current section jumps are immediate transport jumps. Luma does not pretend they are musically quantized yet.
