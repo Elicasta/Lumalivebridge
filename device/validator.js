@@ -262,6 +262,38 @@ function validateCommand(input, options = {}) {
       break;
     }
 
+    case "configure_service_timeline": {
+      if (!Array.isArray(args.songs)) throw new Error("configure_service_timeline.songs must be an array");
+      if (!Array.isArray(args.transitions)) throw new Error("configure_service_timeline.transitions must be an array");
+      if (args.songs.length > 100 || args.transitions.length > 100) throw new Error("service timeline is too large");
+      normalized = {
+        songs: args.songs.map((song, index) => {
+          if (!isObject(song)) throw new Error("timeline song " + index + " must be an object");
+          return {
+            instanceId: cleanName(song.instanceId, "timeline song instanceId"),
+            startBeat: finiteNumber(song.startBeat, "timeline song startBeat"),
+            endBeat: finiteNumber(song.endBeat, "timeline song endBeat"),
+            bpm: finiteNumber(song.bpm, "timeline song bpm"),
+            numerator: integer(song.numerator, "timeline song numerator"),
+            denominator: integer(song.denominator, "timeline song denominator")
+          };
+        }),
+        transitions: args.transitions.map((transition, index) => {
+          if (!isObject(transition)) throw new Error("timeline transition " + index + " must be an object");
+          return {
+            fromInstanceId: cleanName(transition.fromInstanceId, "timeline transition fromInstanceId"),
+            toInstanceId: transition.toInstanceId == null ? null : cleanName(transition.toInstanceId, "timeline transition toInstanceId"),
+            mode: cleanName(transition.mode, "timeline transition mode"),
+            triggerBeat: finiteNumber(transition.triggerBeat, "timeline transition triggerBeat"),
+            nextStartBeat: transition.nextStartBeat == null ? null : finiteNumber(transition.nextStartBeat, "timeline transition nextStartBeat"),
+            vampStartBeat: transition.vampStartBeat == null ? null : finiteNumber(transition.vampStartBeat, "timeline transition vampStartBeat"),
+            vampEndBeat: transition.vampEndBeat == null ? null : finiteNumber(transition.vampEndBeat, "timeline transition vampEndBeat")
+          };
+        })
+      };
+      break;
+    }
+
     case "set_arrangement_loop": {
       const enabled = bool(args.enabled, "set_arrangement_loop.enabled");
       const start = finiteNumber(args.start == null ? 0 : args.start, "set_arrangement_loop.start");
