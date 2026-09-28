@@ -222,6 +222,41 @@ function validateCommand(input, options = {}) {
       break;
     }
 
+    case "ensure_track": {
+      const kind = args.kind === "midi" ? "midi" : args.kind === "audio" ? "audio" : null;
+      if (!kind) throw new Error("ensure_track.kind must be midi or audio");
+      normalized = {
+        kind,
+        name: cleanName(args.name, "ensure_track.name")
+      };
+      break;
+    }
+
+    case "clear_luma_arrangement":
+      normalized = {};
+      break;
+
+    case "create_arrangement_audio_clip": {
+      const position = finiteNumber(args.position, "create_arrangement_audio_clip.position");
+      if (position < 0 || position > 1576800) throw new Error("Arrangement clip position is out of range");
+      normalized = {
+        track: target(args.track, "create_arrangement_audio_clip.track"),
+        filePath: cleanName(args.filePath, "create_arrangement_audio_clip.filePath"),
+        position,
+        name: cleanName(args.name, "create_arrangement_audio_clip.name")
+      };
+      break;
+    }
+
+    case "set_arrangement_loop": {
+      const enabled = bool(args.enabled, "set_arrangement_loop.enabled");
+      const start = finiteNumber(args.start == null ? 0 : args.start, "set_arrangement_loop.start");
+      const length = finiteNumber(args.length == null ? 1 : args.length, "set_arrangement_loop.length");
+      if (start < 0 || length <= 0) throw new Error("Arrangement loop range is invalid");
+      normalized = { enabled, start, length };
+      break;
+    }
+
     default:
       throw new Error("unsupported command");
   }
