@@ -231,6 +231,59 @@ fn scan_audio(package_dir: &Path) -> Result<Vec<StemAsset>, String> {
     Ok(files)
 }
 
+fn scan_cues(package_dir: &Path) -> Result<Vec<CueAsset>, String> {
+    let cues_dir = package_dir.join("Cues");
+    if !cues_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut files = Vec::new();
+    for entry in fs::read_dir(&cues_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if !["json", "mid", "midi"].contains(&extension.as_str()) {
+            continue;
+        }
+
+        let stem = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("cue")
+            .to_lowercase();
+        let kind = if stem.contains("light") || stem.contains("dmx") {
+            "lighting"
+        } else if stem.contains("propresenter") || stem.contains("pro") {
+            "propresenter"
+        } else if stem.contains("mainstage") || stem.contains("main stage") {
+            "mainstage"
+        } else {
+            "midi"
+        };
+
+        files.push(CueAsset {
+            kind: kind.into(),
+            file: path
+                .strip_prefix(package_dir)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string(),
+            section_id: None,
+            beat_offset: 0.0,
+        });
+    }
+
+    files.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.file.cmp(&b.file)));
+    Ok(files)
+}
+
 pub fn ensure_song_package(root: &Path, song: &Song) -> Result<PathBuf, String> {
     ensure_layout(root)?;
     let package = song_package_dir(root, song);
@@ -268,6 +321,9 @@ pub fn ensure_song_package(root: &Path, song: &Song) -> Result<PathBuf, String> 
     manifest.title = song.title.clone();
     if manifest.stems.is_empty() {
         manifest.stems = scan_audio(&package)?;
+    }
+    if manifest.cues.is_empty() {
+        manifest.cues = scan_cues(&package)?;
     }
 
     fs::write(
@@ -326,6 +382,9 @@ fn load_manifest(package: &Path, song: &Song) -> Result<SongPackageManifest, Str
     };
     if manifest.stems.is_empty() {
         manifest.stems = scan_audio(package)?;
+    }
+    if manifest.cues.is_empty() {
+        manifest.cues = scan_cues(package)?;
     }
     Ok(manifest)
 }
