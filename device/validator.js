@@ -222,6 +222,17 @@ function validateCommand(input, options = {}) {
       break;
     }
 
+    case "queue_jump_to_time": {
+      const time = finiteNumber(args.time, "queue_jump_to_time.time");
+      const origin = finiteNumber(args.origin, "queue_jump_to_time.origin");
+      const beatsPerBar = finiteNumber(args.beatsPerBar, "queue_jump_to_time.beatsPerBar");
+      if (time < 0 || origin < 0 || beatsPerBar <= 0 || beatsPerBar > 128) {
+        throw new Error("quantized jump range is invalid");
+      }
+      normalized = { time, origin, beatsPerBar };
+      break;
+    }
+
     case "ensure_track": {
       const kind = args.kind === "midi" ? "midi" : args.kind === "audio" ? "audio" : null;
       if (!kind) throw new Error("ensure_track.kind must be midi or audio");
