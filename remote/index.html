@@ -9,7 +9,20 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <main class="shell">
+  <section id="pairingScreen" class="pairing-screen" hidden>
+    <div class="pairing-card">
+      <div class="pairing-brand"><span class="brand-mark">L</span><span>LUMA LIVE</span></div>
+      <span class="eyebrow">PAIR THIS DEVICE</span>
+      <h2>Enter the 6-digit code</h2>
+      <p>Open Luma Live on the Mac and use the pairing code shown in Settings.</p>
+      <input id="pairingCodeInput" class="pairing-code-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="000000" aria-label="Six digit pairing code">
+      <button id="pairingConnectBtn" class="primary pairing-connect">Connect</button>
+      <div id="pairingError" class="pairing-error" hidden></div>
+      <small>This code is only used to pair. A private device token is stored on this iPad after connection.</small>
+    </div>
+  </section>
+
+  <main id="remoteShell" class="shell">
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark">L</span>
