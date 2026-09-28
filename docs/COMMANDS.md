@@ -30,8 +30,10 @@ panic
 ```text
 load Sunday AM
 sync Sunday AM
+create setlist Sunday AM with Hineh Ma Tov, Goodness of God, Gratitude
 add Gratitude to Sunday AM
 add Gratitude to Sunday AM after Hineh Ma Tov
+remove Gratitude from Sunday AM
 ```
 
 ## Song editing
