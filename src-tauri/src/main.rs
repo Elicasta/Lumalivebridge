@@ -6,9 +6,11 @@ mod lan;
 mod models;
 mod state;
 
+use crate::arrangement::{build_arrangement, jump_target, locate_position, Arrangement};
 use crate::db::Database;
 use crate::models::{LibraryPayload, RuntimeInfo, Setlist, SetlistInput, Song, SongInput};
 use crate::state::AppState;
+use serde_json::{json, Value};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -105,6 +107,125 @@ fn get_runtime_info(state: State<'_, AppState>) -> Result<RuntimeInfo, String> {
         .map_err(|_| "Runtime state lock failed".to_string())
 }
 
+fn active_arrangement(state: &AppState) -> Result<Option<Arrangement>, String> {
+    let Some(id) = state.db.get_active_setlist_id()? else {
+        return Ok(None);
+    };
+    let Some(setlist) = state.db.get_setlist(&id)? else {
+        return Ok(None);
+    };
+    let songs = state.db.list_songs()?;
+    build_arrangement(&setlist, &songs).map(Some)
+}
+
+async fn enriched_live_state(state: &AppState) -> Result<Value, String> {
+    let raw = bridge::state().await;
+    let bridge_connected = raw.is_ok();
+    let mut live = match raw {
+        Ok(value) if value.is_object() => value,
+        Ok(_) => json!({}),
+        Err(_) => json!({}),
+    };
+
+    let arrangement = active_arrangement(state)?;
+    let current_song_time = live.get("currentSongTime").and_then(Value::as_f64);
+    let live_context = match (&arrangement, current_song_time) {
+        (Some(arrangement), Some(beat)) => locate_position(arrangement, beat),
+        _ => None,
+    };
+
+    if let Some(object) = live.as_object_mut() {
+        object.insert("bridgeConnected".into(), json!(bridge_connected));
+        object.insert("activeSetlistId".into(), json!(state.db.get_active_setlist_id()?));
+        object.insert(
+            "liveContext".into(),
+            serde_json::to_value(live_context).map_err(|e| e.to_string())?,
+        );
+    }
+
+    Ok(live)
+}
+
+#[tauri::command]
+async fn get_live_state(state: State<'_, AppState>) -> Result<Value, String> {
+    let state = state.inner().clone();
+    enriched_live_state(&state).await
+}
+
+#[tauri::command]
+async fn direct_live_command(state: State<'_, AppState>, command: Value) -> Result<Value, String> {
+    let state = state.inner().clone();
+    bridge::command(command).await?;
+    enriched_live_state(&state).await
+}
+
+#[tauri::command]
+async fn sync_live_setlist(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    let state = state.inner().clone();
+    let setlist = state
+        .db
+        .get_setlist(&id)?
+        .ok_or_else(|| "Setlist not found".to_string())?;
+    let songs = state.db.list_songs()?;
+    let arrangement = build_arrangement(&setlist, &songs)?;
+    let points: Vec<Value> = arrangement
+        .markers
+        .iter()
+        .map(|point| json!({ "time": point.time, "name": point.name }))
+        .collect();
+
+    bridge::send("sync_cue_points", json!({ "replace": true, "points": points })).await?;
+    state.db.set_active_setlist_id(Some(&setlist.id))?;
+
+    Ok(json!({
+        "arrangement": arrangement,
+        "state": enriched_live_state(&state).await?
+    }))
+}
+
+#[tauri::command]
+async fn jump_live(
+    state: State<'_, AppState>,
+    song_id: Option<String>,
+    instance_id: Option<String>,
+    section_id: Option<String>,
+) -> Result<Value, String> {
+    let state = state.inner().clone();
+    let arrangement = active_arrangement(&state)?
+        .ok_or_else(|| "No active setlist".to_string())?;
+    let (time, song) = jump_target(
+        &arrangement,
+        song_id.as_deref(),
+        instance_id.as_deref(),
+        section_id.as_deref(),
+    )?;
+
+    bridge::send("set_tempo", json!({ "bpm": song.bpm })).await?;
+    bridge::send(
+        "set_meter",
+        json!({
+            "numerator": song.meter.numerator,
+            "denominator": song.meter.denominator
+        }),
+    )
+    .await?;
+    bridge::send("jump_to_time", json!({ "time": time })).await?;
+    enriched_live_state(&state).await
+}
+
+#[tauri::command]
+async fn run_plain_command(state: State<'_, AppState>, text: String) -> Result<Value, String> {
+    let state = state.inner().clone();
+    let result = command::execute(&state, &text).await?;
+    Ok(json!({
+        "result": result,
+        "state": enriched_live_state(&state).await?,
+        "library": state.db.library()?,
+        "activeSetlistId": state.db.get_active_setlist_id()?,
+        "arrangement": active_arrangement(&state)?
+    }))
+}
+
 fn main() {
     install_panic_logger();
     append_diagnostic("Luma Live starting");
@@ -177,7 +298,12 @@ fn main() {
             delete_song,
             save_setlist,
             delete_setlist,
-            get_runtime_info
+            get_runtime_info,
+            get_live_state,
+            direct_live_command,
+            sync_live_setlist,
+            jump_live,
+            run_plain_command
         ])
         .run(context);
 
