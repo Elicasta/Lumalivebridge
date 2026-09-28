@@ -177,8 +177,13 @@ pub fn build_arrangement(setlist: &Setlist, songs: &[Song]) -> Result<Arrangemen
                 "gap" => {
                     next_start = end_beat + bars as f64 * song_beats_per_bar;
                 }
-                "segue" | "hold" => {
+                "segue" => {
                     next_start = end_beat;
+                }
+                "hold" => {
+                    // Keep one silent guard bar after the stop boundary so the
+                    // next song cannot leak before the runtime parks playback.
+                    next_start = end_beat + song_beats_per_bar;
                 }
                 "vamp" => {
                     let requested = item
