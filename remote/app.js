@@ -3,8 +3,13 @@
 
   const params = new URLSearchParams(location.search);
   const incoming = params.get("token");
-  if (incoming) localStorage.setItem("lumaLiveToken", incoming);
-  const token = incoming || localStorage.getItem("lumaLiveToken") || "";
+  if (incoming) {
+    localStorage.setItem("lumaLiveToken", incoming);
+    try {
+      history.replaceState({}, "", location.pathname);
+    } catch (_) {}
+  }
+  let token = incoming || localStorage.getItem("lumaLiveToken") || "";
 
   const $ = (id) => document.getElementById(id);
   const state = {
@@ -51,6 +56,61 @@
     }
   }
 
+  function setPairingVisible(visible) {
+    $("pairingScreen").hidden = !visible;
+    $("remoteShell").classList.toggle("pairing-locked", visible);
+    if (visible) {
+      setTimeout(() => $("pairingCodeInput").focus(), 80);
+    }
+  }
+
+  function pairingError(message) {
+    $("pairingError").textContent = message || "";
+    $("pairingError").hidden = !message;
+  }
+
+  async function pairDevice() {
+    const code = $("pairingCodeInput").value.replace(/\D/g, "").slice(0, 6);
+    $("pairingCodeInput").value = code;
+    if (code.length !== 6) {
+      pairingError("Enter all six digits.");
+      return;
+    }
+
+    $("pairingConnectBtn").disabled = true;
+    $("pairingConnectBtn").textContent = "Connecting…";
+    pairingError("");
+
+    try {
+      const response = await fetch("/api/pair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          deviceName: navigator.userAgent.includes("iPad") ? "iPad" : "PWA Remote"
+        }),
+        cache: "no-store"
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || "Pairing failed");
+      }
+
+      token = data.token || "";
+      if (!token) throw new Error("The Mac did not return a device token.");
+      localStorage.setItem("lumaLiveToken", token);
+      $("pairingCodeInput").value = "";
+      setPairingVisible(false);
+      showNotice("iPad paired with Luma Live.");
+      await Promise.all([refreshLibrary(), refreshState()]);
+    } catch (error) {
+      pairingError(error.message || String(error));
+    } finally {
+      $("pairingConnectBtn").disabled = false;
+      $("pairingConnectBtn").textContent = "Connect";
+    }
+  }
+
   async function api(path, options = {}) {
     if (!token) {
       throw new Error("Open the remote using the full link shown in Luma Live on the Mac.");
@@ -70,7 +130,14 @@
       cache: "no-store"
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "Luma Live request failed");
+    if (!response.ok) {
+      if (response.status === 401) {
+        token = "";
+        localStorage.removeItem("lumaLiveToken");
+        setPairingVisible(true);
+      }
+      throw new Error(data.error || "Luma Live request failed");
+    }
     return data;
   }
 
@@ -596,12 +663,29 @@
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }
 
+  $("pairingConnectBtn").addEventListener("click", pairDevice);
+  $("pairingCodeInput").addEventListener("input", () => {
+    const digits = $("pairingCodeInput").value.replace(/\D/g, "").slice(0, 6);
+    if ($("pairingCodeInput").value !== digits) $("pairingCodeInput").value = digits;
+    pairingError("");
+    if (digits.length === 6) pairDevice();
+  });
+  $("pairingCodeInput").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") pairDevice();
+  });
+
   if (!token) {
-    showError("Open the remote using the full link shown in Luma Live on the Mac.");
     setStatus(false, false);
+    setPairingVisible(true);
   } else {
+    setPairingVisible(false);
     Promise.all([refreshLibrary(), refreshState()]).catch(() => {});
-    setInterval(() => refreshState().catch(() => {}), 650);
-    setInterval(() => refreshLibrary().catch(() => {}), 4000);
   }
+
+  setInterval(() => {
+    if (token) refreshState().catch(() => {});
+  }, 650);
+  setInterval(() => {
+    if (token) refreshLibrary().catch(() => {});
+  }, 4000);
 })();
