@@ -1,4 +1,4 @@
-const CACHE = "luma-live-unified-v4";
+const CACHE = "luma-live-perform-busk-v043";
 const ASSETS = ["/", "/styles.css", "/app.js", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
