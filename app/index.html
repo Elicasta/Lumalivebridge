@@ -160,7 +160,25 @@
               <button id="desktopStopAll" class="panic">STOP ALL</button>
             </div>
           </div>
-          <p class="muted">Full Session View control with scene launch, clip launch, per-track stop, clip colors, tempo details, and live activity.</p>
+          <div class="busk-tool-row">
+            <button id="desktopPrevScene" class="quiet">← Scene</button>
+            <button id="desktopNextScene" class="quiet">Scene →</button>
+            <button id="desktopTapTempo" class="quiet">Tap Tempo</button>
+            <button id="desktopCaptureMidi" class="quiet">Capture MIDI</button>
+            <button id="desktopSessionRecord" class="quiet">● Session Record</button>
+            <label class="busk-swing">Swing
+              <input id="desktopSwing" type="range" min="0" max="1" step="0.01" value="0">
+              <span id="desktopSwingValue">0%</span>
+            </label>
+          </div>
+          <div class="busk-tool-row secondary">
+            <button id="desktopUndo" class="quiet">Undo</button>
+            <button id="desktopRedo" class="quiet">Redo</button>
+            <button id="desktopClearClip" class="quiet">Clear Selected Clip</button>
+            <button id="desktopDuplicateClip" class="quiet">Duplicate Selected Clip</button>
+            <button id="desktopDoubleClip" class="quiet">Double Selected Clip</button>
+          </div>
+          <p class="muted">Full Session View control with scene launch, clip launch, per-track stop, clip colors, tempo details, mixer state, and selected-clip tools.</p>
           <div id="desktopBuskGrid" class="desktop-busk-scroll"></div>
         </article>
       </section>
@@ -201,6 +219,10 @@
                 <div><span>Cue files</span><strong id="songCueStatus">0</strong></div>
               </div>
               <p id="songPackageWarning" class="hint package-warning">Save the song, then attach its Ableton Project and original stems here.</p>
+              <div class="song-file-guide">
+                <div><span>ABLETON SONG</span><strong>Save normally as an Ableton Project folder containing the .als file, then click Attach Ableton Project.</strong></div>
+                <div><span>ORIGINAL STEMS</span><strong>WAV, preferably 24-bit / 48 kHz. Export every stem from the same 1.1.1 start and the same full-song length, then click Import Stems.</strong></div>
+              </div>
               <div class="package-actions">
                 <button id="openSongFolder" class="quiet" disabled>Open Folder</button>
                 <button id="attachSongProject" class="quiet" disabled>Attach Ableton Project</button>
