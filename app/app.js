@@ -8,13 +8,22 @@
     songs: [],
     setlists: [],
     runtime: null,
+    live: null,
+    arrangement: null,
+    activeSetlistId: null,
     editingSongId: null,
     editingSetlistId: null,
-    draftItems: []
+    draftItems: [],
+    mixerSignature: "",
+    sectionSignature: "",
+    sceneSignature: ""
   };
 
+  const volumeTimers = new Map();
+
   const titles = {
-    live: ["SERVICE", "Live"],
+    live: ["LIVE", "Song Control"],
+    busk: ["SESSION VIEW", "Busk"],
     songs: ["LIBRARY", "Songs"],
     setlists: ["SERVICES", "Setlists"],
     settings: ["SYSTEM", "Settings"]
@@ -24,6 +33,16 @@
     const box = $("error");
     box.textContent = message || "";
     box.hidden = !message;
+  }
+
+  function showNotice(message) {
+    const box = $("notice");
+    box.textContent = message || "";
+    box.hidden = !message;
+    if (message) {
+      clearTimeout(showNotice.timer);
+      showNotice.timer = setTimeout(() => { box.hidden = true; }, 2500);
+    }
   }
 
   function escapeHtml(value) {
@@ -46,7 +65,6 @@
   }
 
   document.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", () => go(item.dataset.page)));
-  document.querySelectorAll("[data-go]").forEach((item) => item.addEventListener("click", () => go(item.dataset.go)));
 
   function parseSections(text) {
     const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -104,8 +122,6 @@
 
   function renderSongs() {
     $("songCount").textContent = state.songs.length;
-    $("liveSongCount").textContent = state.songs.length;
-
     const list = $("songList");
     list.innerHTML = "";
     state.songs.forEach((song) => {
@@ -131,6 +147,8 @@
       const song = await invoke("save_song", { song: songPayload() });
       await loadLibrary();
       editSong(song);
+      recomputeArrangement();
+      renderLive();
     } catch (error) {
       showError(error);
     }
@@ -143,6 +161,7 @@
     $("setlistTitle").value = "";
     $("setlistGap").value = "4";
     $("deleteSetlist").hidden = true;
+    $("syncSetlist").disabled = true;
     renderDraft();
   }
 
@@ -153,6 +172,7 @@
     $("setlistTitle").value = setlist.title;
     $("setlistGap").value = setlist.gapBars;
     $("deleteSetlist").hidden = false;
+    $("syncSetlist").disabled = false;
     renderDraft();
   }
 
@@ -202,35 +222,23 @@
 
   function renderSetlists() {
     $("setlistCount").textContent = state.setlists.length;
-    $("liveSetlistCount").textContent = state.setlists.length;
-
     const list = $("setlistList");
     list.innerHTML = "";
+
     state.setlists.forEach((setlist) => {
-      const button = document.createElement("button");
-      button.className = "data-row";
-      button.innerHTML =
-        '<span><b>' + escapeHtml(setlist.title) + '</b><small>' + setlist.items.length +
-        ' song' + (setlist.items.length === 1 ? "" : "s") + '</small></span><span class="arrow">›</span>';
-      button.addEventListener("click", () => editSetlist(setlist));
-      list.appendChild(button);
+      const row = document.createElement("div");
+      row.className = "data-row setlist-data-row" + (setlist.id === state.activeSetlistId ? " active" : "");
+      row.innerHTML =
+        '<button class="row-main"><span><b>' + escapeHtml(setlist.title) + '</b><small>' +
+        setlist.items.length + ' song' + (setlist.items.length === 1 ? "" : "s") +
+        (setlist.id === state.activeSetlistId ? " · ACTIVE" : "") +
+        '</small></span><span class="arrow">›</span></button>' +
+        '<button class="row-sync">' + (setlist.id === state.activeSetlistId ? "Resync" : "Sync") + '</button>';
+      row.querySelector(".row-main").addEventListener("click", () => editSetlist(setlist));
+      row.querySelector(".row-sync").addEventListener("click", () => syncSetlistById(setlist.id));
+      list.appendChild(row);
     });
     if (!state.setlists.length) list.innerHTML = '<div class="empty">No saved setlists yet.</div>';
-
-    const recent = $("recentSetlists");
-    recent.innerHTML = "";
-    state.setlists.slice(0, 5).forEach((setlist) => {
-      const button = document.createElement("button");
-      button.className = "data-row";
-      button.innerHTML =
-        '<span><b>' + escapeHtml(setlist.title) + '</b><small>' + setlist.items.length + ' songs</small></span><span class="arrow">›</span>';
-      button.addEventListener("click", () => {
-        editSetlist(setlist);
-        go("setlists");
-      });
-      recent.appendChild(button);
-    });
-    if (!state.setlists.length) recent.innerHTML = '<div class="empty">Your first saved service will appear here.</div>';
   }
 
   async function saveSetlist() {
@@ -239,8 +247,359 @@
       const setlist = await invoke("save_setlist", { setlist: setlistPayload() });
       await loadLibrary();
       editSetlist(setlist);
+      recomputeArrangement();
     } catch (error) {
       showError(error);
+    }
+  }
+
+  function buildArrangement(setlist) {
+    if (!setlist) return null;
+    const songsById = new Map(state.songs.map((song) => [song.id, song]));
+    let cursor = 0;
+    const songs = [];
+
+    for (const item of setlist.items) {
+      const song = songsById.get(item.songId);
+      if (!song) continue;
+      const beatsPerBar = Number(song.meter && song.meter.numerator || 4);
+      const startBeat = cursor;
+      const endBeat = startBeat + Number(song.lengthBars) * beatsPerBar;
+      songs.push({
+        instanceId: item.id,
+        songId: song.id,
+        title: song.title,
+        artist: song.artist || "",
+        bpm: Number(song.bpm),
+        key: song.key || "",
+        meter: song.meter,
+        startBeat,
+        endBeat,
+        sections: (song.sections || []).map((section) => ({
+          id: section.id,
+          name: section.name,
+          localStartBar: section.startBar,
+          startBeat: startBeat + (Number(section.startBar) - 1) * beatsPerBar
+        }))
+      });
+      cursor = endBeat + Number(setlist.gapBars || 0) * beatsPerBar;
+    }
+
+    return {
+      setlistId: setlist.id,
+      title: setlist.title,
+      startBeat: 0,
+      endBeat: cursor,
+      songs
+    };
+  }
+
+  function recomputeArrangement() {
+    const active = state.setlists.find((item) => item.id === state.activeSetlistId);
+    state.arrangement = active ? buildArrangement(active) : null;
+  }
+
+  function currentPlacement() {
+    const ctx = state.live && state.live.liveContext;
+    if (!ctx || !state.arrangement) return null;
+    return state.arrangement.songs.find((song) => song.instanceId === ctx.instanceId) || null;
+  }
+
+  function updateBridgeStatus() {
+    const connected = !!(state.live && state.live.bridgeConnected);
+    $("bridgeDot").className = "dot " + (connected ? "ready" : "waiting");
+    $("bridgeStatus").textContent = connected ? "Ableton connected" : "Ableton offline";
+  }
+
+  function renderTransport() {
+    const live = state.live || {};
+    const ctx = live.liveContext;
+    $("desktopPlay").classList.toggle("active", !!live.isPlaying);
+    $("desktopPlayLabel").textContent = live.isPlaying ? "Playing" : "Play";
+    $("desktopClick").classList.toggle("active", !!live.metronome);
+    $("desktopTempo").textContent = Number.isFinite(live.tempo) ? Math.round(live.tempo * 10) / 10 : "--";
+    $("desktopMeter").textContent = live.meter ? live.meter.numerator + "/" + live.meter.denominator : "--";
+    $("desktopBar").textContent = ctx && Number.isFinite(ctx.currentBar) ? ctx.currentBar + "." + (ctx.beatInBar || 1) : "--";
+  }
+
+  function renderSections(placement, ctx) {
+    const sections = placement ? placement.sections || [] : [];
+    const signature = placement
+      ? placement.instanceId + "|" + sections.map((s) => s.id + ":" + s.name + ":" + s.localStartBar).join("|")
+      : "";
+
+    if (signature !== state.sectionSignature) {
+      state.sectionSignature = signature;
+      $("desktopSectionGrid").innerHTML = "";
+      sections.forEach((section, index) => {
+        const button = document.createElement("button");
+        button.className = "desktop-section";
+        button.dataset.sectionId = section.id;
+        button.innerHTML =
+          '<span>' + String(index + 1).padStart(2, "0") + '</span>' +
+          '<strong>' + escapeHtml(section.name) + '</strong>' +
+          '<small>Bar ' + section.localStartBar + '</small>';
+        button.addEventListener("click", () => jumpTo(placement, section.id));
+        $("desktopSectionGrid").appendChild(button);
+      });
+    }
+
+    $("desktopSectionGrid").querySelectorAll(".desktop-section").forEach((button) => {
+      button.classList.toggle("active", !!ctx && button.dataset.sectionId === ctx.sectionId);
+    });
+
+    const currentIndex = placement && ctx && ctx.sectionId
+      ? sections.findIndex((section) => section.id === ctx.sectionId)
+      : -1;
+    $("desktopPrevSection").disabled = !placement || currentIndex <= 0;
+    $("desktopNextSectionBtn").disabled = !placement || !sections.length || currentIndex >= sections.length - 1;
+  }
+
+  function renderMixer() {
+    const tracks = state.live && Array.isArray(state.live.tracks) ? state.live.tracks : [];
+    const signature = tracks.map((track) => track.index + ":" + track.name).join("|");
+
+    if (signature !== state.mixerSignature) {
+      state.mixerSignature = signature;
+      $("desktopMixer").innerHTML = "";
+      tracks.forEach((track) => {
+        const row = document.createElement("div");
+        row.className = "desktop-mixer-row";
+        row.dataset.trackIndex = track.index;
+        row.innerHTML =
+          '<span class="mix-num">' + String(track.number).padStart(2, "0") + '</span>' +
+          '<strong>' + escapeHtml(track.name) + '</strong>' +
+          '<input type="range" min="0" max="1" step="0.01" value="' +
+          (Number.isFinite(track.volume) ? track.volume : 0.85) + '">' +
+          '<span class="mix-value">--</span>' +
+          '<button class="mix-toggle mute">M</button>' +
+          '<button class="mix-toggle solo">S</button>';
+
+        const slider = row.querySelector('input[type="range"]');
+        slider.addEventListener("pointerdown", () => slider.dataset.dragging = "1");
+        const release = () => delete slider.dataset.dragging;
+        slider.addEventListener("pointerup", release);
+        slider.addEventListener("pointercancel", release);
+        slider.addEventListener("input", () => {
+          row.querySelector(".mix-value").textContent = Math.round(Number(slider.value) * 100) + "%";
+          clearTimeout(volumeTimers.get(track.index));
+          volumeTimers.set(track.index, setTimeout(() => {
+            direct({
+              type: "set_track_volume",
+              args: { track: { index: track.index }, value: Number(slider.value) }
+            }).catch(() => {});
+          }, 90));
+        });
+
+        row.querySelector(".mute").addEventListener("click", () => {
+          const current = (state.live.tracks || []).find((item) => item.index === track.index);
+          direct({
+            type: "set_track_mute",
+            args: { track: { index: track.index }, value: !(current && current.mute) }
+          }).catch(() => {});
+        });
+        row.querySelector(".solo").addEventListener("click", () => {
+          const current = (state.live.tracks || []).find((item) => item.index === track.index);
+          direct({
+            type: "set_track_solo",
+            args: { track: { index: track.index }, value: !(current && current.solo) }
+          }).catch(() => {});
+        });
+
+        $("desktopMixer").appendChild(row);
+      });
+    }
+
+    tracks.forEach((track) => {
+      const row = $("desktopMixer").querySelector('[data-track-index="' + track.index + '"]');
+      if (!row) return;
+      const slider = row.querySelector('input[type="range"]');
+      if (!slider.dataset.dragging && Number.isFinite(track.volume)) slider.value = track.volume;
+      row.querySelector(".mix-value").textContent = Number.isFinite(track.volume) ? Math.round(track.volume * 100) + "%" : "--";
+      row.querySelector(".mute").classList.toggle("active", !!track.mute);
+      row.querySelector(".solo").classList.toggle("active", !!track.solo);
+    });
+
+    if (!tracks.length) $("desktopMixer").innerHTML = '<div class="empty">Open Ableton and load Luma Live.amxd to see track controls.</div>';
+  }
+
+  function renderScenes() {
+    const scenes = state.live && Array.isArray(state.live.scenes) ? state.live.scenes : [];
+    const signature = scenes.map((scene) => scene.index + ":" + scene.name).join("|");
+
+    if (signature !== state.sceneSignature) {
+      state.sceneSignature = signature;
+      $("desktopSceneGrid").innerHTML = "";
+      scenes.forEach((scene) => {
+        const button = document.createElement("button");
+        button.className = "desktop-scene";
+        button.dataset.sceneIndex = scene.index;
+        button.innerHTML =
+          '<span>' + String(scene.number).padStart(2, "0") + '</span>' +
+          '<strong>' + escapeHtml(scene.name) + '</strong>';
+        button.addEventListener("click", () => direct({
+          type: "fire_scene",
+          args: { scene: { index: scene.index } }
+        }).catch(() => {}));
+        $("desktopSceneGrid").appendChild(button);
+      });
+    }
+
+    $("desktopSceneGrid").querySelectorAll(".desktop-scene").forEach((button) => {
+      button.classList.toggle("active", Number(button.dataset.sceneIndex) === Number(state.live && state.live.activeSceneIndex));
+    });
+    if (!scenes.length) $("desktopSceneGrid").innerHTML = '<div class="empty">No Session View scenes found.</div>';
+  }
+
+  function renderService() {
+    const songs = state.arrangement && state.arrangement.songs || [];
+    const ctx = state.live && state.live.liveContext;
+    const setlist = state.setlists.find((item) => item.id === state.activeSetlistId);
+    $("desktopServiceTitle").textContent = setlist ? setlist.title : "No setlist loaded";
+    $("desktopServiceCount").textContent = songs.length;
+    $("desktopServiceOrder").innerHTML = "";
+
+    songs.forEach((song, index) => {
+      const button = document.createElement("button");
+      button.className = "live-service-row" + (ctx && ctx.instanceId === song.instanceId ? " active" : "");
+      button.innerHTML =
+        '<span>' + String(index + 1).padStart(2, "0") + '</span>' +
+        '<span><b>' + escapeHtml(song.title) + '</b><small>' +
+        escapeHtml(song.bpm + " BPM" + (song.key ? " · " + song.key : "")) +
+        '</small></span><em>' + (ctx && ctx.instanceId === song.instanceId ? "NOW" : "GO") + '</em>';
+      button.addEventListener("click", () => jumpTo(song, null));
+      $("desktopServiceOrder").appendChild(button);
+    });
+
+    if (!songs.length) $("desktopServiceOrder").innerHTML = '<div class="empty">Sync a setlist to Ableton.</div>';
+  }
+
+  function renderLive() {
+    updateBridgeStatus();
+    renderTransport();
+    const live = state.live || {};
+    const ctx = live.liveContext;
+    const placement = currentPlacement();
+
+    if (!ctx) {
+      $("desktopCurrentSong").textContent = state.activeSetlistId ? "Waiting for playhead" : "No service loaded";
+      $("desktopCurrentMeta").textContent = live.bridgeConnected
+        ? "Sync a setlist or move the playhead into a song."
+        : "Open Ableton and load Luma Live.amxd.";
+      $("desktopCurrentSection").textContent = "—";
+      $("desktopNextSection").textContent = "—";
+      $("desktopProgress").style.width = "0%";
+      $("desktopPrevSong").disabled = true;
+      $("desktopNextSong").disabled = !(state.arrangement && state.arrangement.songs && state.arrangement.songs.length);
+    } else {
+      $("desktopCurrentSong").textContent = ctx.songTitle;
+      $("desktopCurrentMeta").textContent = [
+        ctx.bpm + " BPM",
+        ctx.key || null,
+        ctx.meter ? ctx.meter.numerator + "/" + ctx.meter.denominator : null,
+        state.arrangement ? "Song " + (ctx.songIndex + 1) + " of " + state.arrangement.songs.length : null
+      ].filter(Boolean).join(" · ");
+      $("desktopCurrentSection").textContent = ctx.sectionName || "COUNT / PRE-ROLL";
+      $("desktopNextSection").textContent = ctx.nextSectionName || "END";
+      $("desktopProgress").style.width = Math.round((ctx.progress || 0) * 1000) / 10 + "%";
+      $("desktopPrevSong").disabled = !ctx.previousSong;
+      $("desktopNextSong").disabled = !ctx.nextSong;
+    }
+
+    renderSections(placement, ctx);
+    renderMixer();
+    renderScenes();
+    renderService();
+  }
+
+  async function direct(command) {
+    const live = await invoke("direct_live_command", { command });
+    state.live = live;
+    if ("activeSetlistId" in live) state.activeSetlistId = live.activeSetlistId;
+    recomputeArrangement();
+    renderLive();
+    return live;
+  }
+
+  async function jumpTo(song, sectionId) {
+    if (!song) return;
+    try {
+      const live = await invoke("jump_live", {
+        songId: song.songId || null,
+        instanceId: song.instanceId || null,
+        sectionId: sectionId || null
+      });
+      state.live = live;
+      renderLive();
+    } catch (error) {
+      showError(error);
+    }
+  }
+
+  async function jumpAdjacentSong(direction) {
+    const ctx = state.live && state.live.liveContext;
+    if (!ctx) {
+      const first = state.arrangement && state.arrangement.songs && state.arrangement.songs[0];
+      if (direction > 0 && first) return jumpTo(first, null);
+      return;
+    }
+    const ref = direction < 0 ? ctx.previousSong : ctx.nextSong;
+    const song = ref && state.arrangement && state.arrangement.songs.find((item) => item.instanceId === ref.instanceId);
+    if (song) await jumpTo(song, null);
+  }
+
+  async function jumpAdjacentSection(direction) {
+    const ctx = state.live && state.live.liveContext;
+    const placement = currentPlacement();
+    if (!placement) return;
+    const sections = placement.sections || [];
+    const currentIndex = ctx && ctx.sectionId
+      ? sections.findIndex((section) => section.id === ctx.sectionId)
+      : -1;
+    const target = sections[currentIndex + direction];
+    if (target) await jumpTo(placement, target.id);
+  }
+
+  async function syncSetlistById(id) {
+    if (!id) return;
+    showError("");
+    try {
+      const data = await invoke("sync_live_setlist", { id });
+      state.activeSetlistId = id;
+      state.arrangement = data.arrangement || null;
+      state.live = data.state || state.live;
+      renderSetlists();
+      renderLive();
+      go("live");
+      showNotice("Setlist synced to Ableton.");
+    } catch (error) {
+      showError(error);
+    }
+  }
+
+  async function runPlain(text) {
+    const value = String(text || "").trim();
+    if (!value) return;
+    $("plainRun").disabled = true;
+    showError("");
+    try {
+      const data = await invoke("run_plain_command", { text: value });
+      if (data.library) {
+        state.songs = data.library.songs || [];
+        state.setlists = data.library.setlists || [];
+        renderSongs();
+        renderSetlists();
+      }
+      if ("activeSetlistId" in data) state.activeSetlistId = data.activeSetlistId;
+      if ("arrangement" in data) state.arrangement = data.arrangement;
+      if (data.state) state.live = data.state;
+      renderLive();
+      $("plainCommand").value = "";
+      showNotice(data.result && data.result.summary ? data.result.summary : "Command completed.");
+    } catch (error) {
+      showError(error);
+    } finally {
+      $("plainRun").disabled = false;
     }
   }
 
@@ -251,21 +610,19 @@
     $("databasePath").textContent = runtime.databasePath || "Unavailable";
     if (runtime.startupWarning) showError(runtime.startupWarning);
     $("serverDot").className = "dot " + (runtime.serverRunning ? "ready" : "waiting");
-    $("serverStatus").textContent = runtime.serverRunning ? "LAN remote ready" : "Starting local server";
+    $("serverStatus").textContent = runtime.serverRunning ? "Remote ready · 7878" : "Starting remote";
 
     const links = runtime.localUrls || [];
-    $("liveRemoteUrl").textContent = links.length ? links[0].replace(/\?token=.*/, "") : "No LAN address yet";
-
     const host = $("remoteLinks");
     host.innerHTML = "";
     links.forEach((url) => {
       const item = document.createElement("div");
       item.className = "remote-link";
-      item.innerHTML = '<code>' + escapeHtml(url.replace(/\?token=.*/, "")) + '</code><button>Copy Link</button>';
+      item.innerHTML = '<code>' + escapeHtml(url.replace(/\?token=.*/, "")) + '</code><button>Copy Full Link</button>';
       item.querySelector("button").addEventListener("click", async () => {
         await navigator.clipboard.writeText(url);
         item.querySelector("button").textContent = "Copied";
-        setTimeout(() => item.querySelector("button").textContent = "Copy Link", 1200);
+        setTimeout(() => item.querySelector("button").textContent = "Copy Full Link", 1200);
       });
       host.appendChild(item);
     });
@@ -279,11 +636,26 @@
     renderSongs();
     renderSetlists();
     renderDraft();
+    recomputeArrangement();
   }
 
   async function loadRuntime() {
     state.runtime = await invoke("get_runtime_info");
     renderRuntime();
+  }
+
+  async function loadLive() {
+    try {
+      const live = await invoke("get_live_state");
+      state.live = live || {};
+      if ("activeSetlistId" in state.live) state.activeSetlistId = state.live.activeSetlistId;
+      recomputeArrangement();
+      renderSetlists();
+      renderLive();
+    } catch (_) {
+      state.live = { bridgeConnected: false };
+      renderLive();
+    }
   }
 
   $("newSong").addEventListener("click", resetSongEditor);
@@ -307,20 +679,50 @@
     renderDraft();
   });
   $("saveSetlist").addEventListener("click", saveSetlist);
+  $("syncSetlist").addEventListener("click", () => syncSetlistById(state.editingSetlistId));
   $("deleteSetlist").addEventListener("click", async () => {
     if (!state.editingSetlistId || !confirm("Delete this setlist?")) return;
     try {
       await invoke("delete_setlist", { id: state.editingSetlistId });
       resetSetlistEditor();
+      if (state.activeSetlistId === state.editingSetlistId) state.activeSetlistId = null;
       await loadLibrary();
     } catch (error) {
       showError(error);
     }
   });
 
+  $("desktopPlay").addEventListener("click", () => direct({
+    type: state.live && state.live.isPlaying ? "stop_playback" : "start_playback",
+    args: {}
+  }).catch((error) => showError(error)));
+  $("desktopStop").addEventListener("click", () => direct({ type: "stop_playback", args: {} }).catch((error) => showError(error)));
+  $("desktopClick").addEventListener("click", () => direct({
+    type: "set_metronome",
+    args: { enabled: !(state.live && state.live.metronome) }
+  }).catch((error) => showError(error)));
+  $("desktopStopAll").addEventListener("click", () => direct({ type: "stop_all_clips", args: {} }).catch((error) => showError(error)));
+
+  $("desktopPrevSong").addEventListener("click", () => jumpAdjacentSong(-1));
+  $("desktopNextSong").addEventListener("click", () => jumpAdjacentSong(1));
+  $("desktopPrevSection").addEventListener("click", () => jumpAdjacentSection(-1));
+  $("desktopNextSectionBtn").addEventListener("click", () => jumpAdjacentSection(1));
+
+  $("plainRun").addEventListener("click", () => runPlain($("plainCommand").value));
+  $("plainCommand").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runPlain($("plainCommand").value);
+    }
+  });
+  document.querySelectorAll("[data-plain]").forEach((button) => {
+    button.addEventListener("click", () => runPlain(button.dataset.plain));
+  });
+
   resetSongEditor();
   resetSetlistEditor();
 
-  Promise.all([loadLibrary(), loadRuntime()]).catch((error) => showError(error));
-  setInterval(() => loadRuntime().catch(() => {}), 2000);
+  Promise.all([loadLibrary(), loadRuntime(), loadLive()]).catch((error) => showError(error));
+  setInterval(() => loadRuntime().catch(() => {}), 2500);
+  setInterval(() => loadLive().catch(() => {}), 750);
 })();
