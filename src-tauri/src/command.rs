@@ -1,12 +1,70 @@
 use crate::arrangement::{build_arrangement, jump_target, locate_position, Arrangement};
 use crate::bridge;
-use crate::models::{SectionInput, SetlistInput, SetlistItemInput, SongInput};
+use crate::models::{Meter, SectionInput, SetlistInput, SetlistItemInput, SongInput};
 use crate::state::AppState;
 use regex::Regex;
 use serde_json::{json, Value};
 
 fn normalized(value: &str) -> String {
     value.trim().to_lowercase()
+}
+
+fn parse_section_specs(value: &str) -> Result<(Vec<SectionInput>, i64), String> {
+    let splitter = Regex::new(r"(?i)\s*,\s*|\s+and\s+").unwrap();
+    let repeat_re = Regex::new(r"(?i)\s+(?:x|×)\s*(\d+)\s*$").unwrap();
+    let bars_re = Regex::new(r"(?i)\s+(\d+)\s+bars?\s*$").unwrap();
+
+    let mut cursor = 1i64;
+    let mut sections = Vec::new();
+
+    for raw in splitter.split(value.trim().trim_end_matches('.')) {
+        let mut working = raw.trim().to_string();
+        if working.is_empty() {
+            continue;
+        }
+
+        let mut repeat = 1i64;
+        if let Some(caps) = repeat_re.captures(&working) {
+            repeat = caps[1].parse::<i64>().unwrap_or(1).clamp(1, 16);
+            if let Some(full) = caps.get(0) {
+                working.truncate(full.start());
+                working = working.trim().to_string();
+            }
+        }
+
+        let mut bars = 8i64;
+        if let Some(caps) = bars_re.captures(&working) {
+            bars = caps[1].parse::<i64>().unwrap_or(8).clamp(1, 512);
+            if let Some(full) = caps.get(0) {
+                working.truncate(full.start());
+                working = working.trim().to_string();
+            }
+        }
+
+        if working.is_empty() {
+            return Err("Every section needs a name".into());
+        }
+
+        for index in 0..repeat {
+            let name = if repeat > 1 {
+                format!("{} {}", working, index + 1)
+            } else {
+                working.clone()
+            };
+            sections.push(SectionInput {
+                id: None,
+                name,
+                start_bar: cursor,
+            });
+            cursor += bars;
+        }
+    }
+
+    if sections.is_empty() {
+        return Err("Add at least one section".into());
+    }
+
+    Ok((sections, (cursor - 1).max(1)))
 }
 
 fn active_arrangement(state: &AppState) -> Result<Option<Arrangement>, String> {
@@ -86,6 +144,91 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
         return Err("Type a command first".into());
     }
     let lower = normalized(raw);
+
+    let song_build_re = Regex::new(
+        r"(?i)^create\s+(?:a\s+)?(?:worship\s+|praise\s+|church\s+)?song\s+(?:called|named)\s+(.+?)\s+at\s+(\d+(?:\.\d+)?)\s*bpm(?:\s+(?:in|at)\s+(\d+)\s*/\s*(\d+))?\s+with\s+(.+)$"
+    ).unwrap();
+    if let Some(caps) = song_build_re.captures(raw) {
+        let title = caps[1].trim().to_string();
+        let bpm: f64 = caps[2].parse().map_err(|_| "Invalid BPM".to_string())?;
+        if !(20.0..=999.0).contains(&bpm) {
+            return Err("Tempo must be between 20 and 999 BPM".into());
+        }
+        let meter = if caps.get(3).is_some() && caps.get(4).is_some() {
+            Meter {
+                numerator: caps[3].parse().map_err(|_| "Invalid meter".to_string())?,
+                denominator: caps[4].parse().map_err(|_| "Invalid meter".to_string())?,
+            }
+        } else {
+            Meter::default()
+        };
+        let (sections, length_bars) = parse_section_specs(&caps[5])?;
+        let song = state.db.save_song(SongInput {
+            id: None,
+            title: title.clone(),
+            artist: None,
+            bpm,
+            key: None,
+            meter,
+            length_bars,
+            sections,
+        })?;
+        return Ok(json!({
+            "summary": format!("Saved {} with {} sections to the Luma library", song.title, song.sections.len())
+        }));
+    }
+
+    if lower.contains("create") && lower.contains("session") {
+        let bpm_re = Regex::new(r"(?i)(?:at|tempo|bpm(?:\s+to)?)\s*(\d+(?:\.\d+)?)\s*bpm?").unwrap();
+        if let Some(caps) = bpm_re.captures(raw) {
+            let bpm: f64 = caps[1].parse().map_err(|_| "Invalid BPM".to_string())?;
+            bridge::send("set_tempo", json!({ "bpm": bpm })).await?;
+        }
+
+        let tracks = [
+            ("audio", "CLICK"),
+            ("audio", "GUIDE"),
+            ("audio", "LOOPS"),
+            ("audio", "DRUMS"),
+            ("audio", "BASS"),
+            ("audio", "KEYS"),
+            ("audio", "GUITARS"),
+            ("audio", "BGV"),
+            ("audio", "TRACKS"),
+            ("midi", "MAINSTAGE"),
+            ("midi", "PROPRESENTER"),
+            ("midi", "LUMARIG"),
+        ];
+        for (kind, name) in tracks {
+            bridge::send("create_track", json!({ "kind": kind, "name": name, "index": -1 })).await?;
+        }
+        return Ok(json!({ "summary": "Built the standard Luma church track layout in Ableton" }));
+    }
+
+    let meter_re = Regex::new(r"(?i)^(?:set\s+)?(?:meter|time\s+signature)(?:\s+to)?\s+(\d+)\s*/\s*(\d+)$").unwrap();
+    if let Some(caps) = meter_re.captures(raw) {
+        let numerator: i64 = caps[1].parse().map_err(|_| "Invalid meter".to_string())?;
+        let denominator: i64 = caps[2].parse().map_err(|_| "Invalid meter".to_string())?;
+        bridge::send("set_meter", json!({ "numerator": numerator, "denominator": denominator })).await?;
+        return Ok(json!({ "summary": format!("Meter set to {}/{}", numerator, denominator) }));
+    }
+
+    let volume_re = Regex::new(r"(?i)^set\s+(?:track\s+)?(.+?)\s+volume\s+to\s+(\d+(?:\.\d+)?)\s*%$").unwrap();
+    if let Some(caps) = volume_re.captures(raw) {
+        let track = caps[1].trim();
+        let percent: f64 = caps[2].parse().map_err(|_| "Invalid volume".to_string())?;
+        let value = (percent / 100.0).clamp(0.0, 1.0);
+        bridge::send("set_track_volume", json!({
+            "track": { "name": track },
+            "value": value
+        })).await?;
+        return Ok(json!({ "summary": format!("{} volume set to {}%", track, percent) }));
+    }
+
+    if matches!(lower.as_str(), "panic" | "stop all" | "stop all clips") {
+        bridge::send("stop_all_clips", json!({})).await?;
+        return Ok(json!({ "summary": "Stopped all Session View clips" }));
+    }
 
     let tempo_re = Regex::new(r"(?i)^(?:set\s+)?tempo(?:\s+to)?\s+(\d+(?:\.\d+)?)\s*(?:bpm)?$").unwrap();
     if let Some(caps) = tempo_re.captures(raw) {
@@ -192,6 +335,19 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
         {
             return jump(state, &arrangement, &context.instance_id, Some(&section.id)).await;
         }
+    }
+
+    let load_song_re = Regex::new(r"(?i)^(?:load|open|bring\s+in)\s+(?:the\s+)?song\s+(.+)$").unwrap();
+    if let Some(caps) = load_song_re.captures(raw) {
+        let requested = normalized(caps[1].trim().trim_end_matches('.'));
+        let arrangement = active_arrangement(state)?
+            .ok_or_else(|| "No active setlist is synced. Add the song to a setlist first.".to_string())?;
+        let song = arrangement
+            .songs
+            .iter()
+            .find(|song| normalized(&song.title) == requested)
+            .ok_or_else(|| format!("{} is not in the active setlist", caps[1].trim()))?;
+        return jump(state, &arrangement, &song.instance_id, None).await;
     }
 
     let load_re = Regex::new(r"(?i)^(?:load|sync)\s+(.+?)(?:\s+(?:setlist|service))?$").unwrap();
