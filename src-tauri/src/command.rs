@@ -24,21 +24,30 @@ fn parse_section_specs(value: &str) -> Result<(Vec<SectionInput>, i64), String> 
         }
 
         let mut repeat = 1i64;
-        if let Some(caps) = repeat_re.captures(&working) {
-            repeat = caps[1].parse::<i64>().unwrap_or(1).clamp(1, 16);
-            if let Some(full) = caps.get(0) {
-                working.truncate(full.start());
-                working = working.trim().to_string();
-            }
-        }
-
         let mut bars = 8i64;
-        if let Some(caps) = bars_re.captures(&working) {
-            bars = caps[1].parse::<i64>().unwrap_or(8).clamp(1, 512);
-            if let Some(full) = caps.get(0) {
-                working.truncate(full.start());
-                working = working.trim().to_string();
+
+        // Accept either "Bridge x2 8 bars" or "Bridge 8 bars x2".
+        // Peel recognized suffixes until only the section name remains.
+        loop {
+            if let Some(caps) = repeat_re.captures(&working) {
+                repeat = caps[1].parse::<i64>().unwrap_or(1).clamp(1, 16);
+                if let Some(full) = caps.get(0) {
+                    working.truncate(full.start());
+                    working = working.trim().to_string();
+                    continue;
+                }
             }
+
+            if let Some(caps) = bars_re.captures(&working) {
+                bars = caps[1].parse::<i64>().unwrap_or(8).clamp(1, 512);
+                if let Some(full) = caps.get(0) {
+                    working.truncate(full.start());
+                    working = working.trim().to_string();
+                    continue;
+                }
+            }
+
+            break;
         }
 
         if working.is_empty() {
