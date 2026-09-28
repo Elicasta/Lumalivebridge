@@ -17,7 +17,9 @@
     pendingPlainText: null,
     mixerSignature: "",
     sectionSignature: "",
-    sceneSignature: ""
+    sceneSignature: "",
+    buskSignature: "",
+    packageStatuses: {}
   };
 
   const volumeTimers = new Map();
@@ -58,6 +60,36 @@
     return crypto.randomUUID ? crypto.randomUUID() : "item-" + Date.now() + "-" + Math.random();
   }
 
+  function liveColor(value, fallback = "#23272d") {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return fallback;
+    return "#" + (n & 0xFFFFFF).toString(16).padStart(6, "0");
+  }
+
+  function readableText(hex) {
+    const clean = String(hex || "").replace("#", "");
+    if (clean.length !== 6) return "#f3f4f5";
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    return (r * 299 + g * 587 + b * 114) / 1000 > 155 ? "#101214" : "#ffffff";
+  }
+
+  function transposeKey(key, semitones) {
+    const match = String(key || "").trim().match(/^([A-Ga-g])([#b]?)(m?)$/);
+    if (!match || !semitones) return String(key || "").trim();
+    const useFlats = match[2] === "b";
+    const sharps = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+    const flats = ["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
+    const lookup = {C:0,"C#":1,Db:1,D:2,"D#":3,Eb:3,E:4,F:5,"F#":6,Gb:6,G:7,"G#":8,Ab:8,A:9,"A#":10,Bb:10,B:11};
+    const tonic = match[1].toUpperCase() + match[2];
+    const index = lookup[tonic];
+    if (index == null) return String(key || "").trim();
+    const shifted = (index + Number(semitones) % 12 + 12) % 12;
+    return (useFlats ? flats : sharps)[shifted] + match[3];
+  }
+
+
   function go(page) {
     document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === page));
     document.querySelectorAll(".page").forEach((panel) => panel.classList.toggle("active", panel.dataset.pagePanel === page));
@@ -93,6 +125,38 @@
     };
   }
 
+  function currentPackageStatus() {
+    return state.editingSongId ? state.packageStatuses[state.editingSongId] || null : null;
+  }
+
+  function renderSongPackageStatus() {
+    const status = currentPackageStatus();
+    const enabled = !!state.editingSongId;
+    ["openSongFolder","attachSongProject","importSongStems","rescanSongPackage"].forEach((id) => {
+      $(id).disabled = !enabled;
+    });
+
+    if (!status) {
+      $("songPackageBadge").textContent = enabled ? "CHECKING" : "NEW";
+      $("songPackagePath").textContent = enabled ? "Rescan to inspect this package" : "Save the song first";
+      $("songProjectStatus").textContent = "Not attached";
+      $("songStemStatus").textContent = "0";
+      $("songCueStatus").textContent = "0";
+      $("songPackageWarning").textContent = enabled
+        ? "Attach the Ableton Project and import original stems before building a service."
+        : "Save the song, then attach its Ableton Project and original stems here.";
+      return;
+    }
+
+    $("songPackageBadge").textContent = status.projectAttached && status.stemCount > 0 ? "READY" : "NEEDS FILES";
+    $("songPackagePath").textContent = status.packagePath || "Unavailable";
+    $("songProjectStatus").textContent = status.sourceAls || (status.projectAttached ? "Project attached · no .als found" : "Not attached");
+    $("songStemStatus").textContent = String(status.stemCount || 0);
+    $("songCueStatus").textContent = String(status.cueCount || 0);
+    $("songPackageWarning").textContent = (status.warnings || []).join(" · ") ||
+      "Song package is ready to be collected into a service.";
+  }
+
   function resetSongEditor() {
     state.editingSongId = null;
     $("songEditorTitle").textContent = "New Song";
@@ -105,6 +169,9 @@
     $("songLength").value = "64";
     $("songSections").value = "";
     $("deleteSong").hidden = true;
+    $("saveSongCopy").hidden = true;
+    $("saveSong").textContent = "Create Song";
+    renderSongPackageStatus();
   }
 
   function editSong(song) {
@@ -119,6 +186,9 @@
     $("songLength").value = song.lengthBars;
     $("songSections").value = song.sections.map((section) => section.name + " @ " + section.startBar).join("\n");
     $("deleteSong").hidden = false;
+    $("saveSongCopy").hidden = false;
+    $("saveSong").textContent = "Update Song";
+    renderSongPackageStatus();
   }
 
   function renderSongs() {
@@ -126,12 +196,16 @@
     const list = $("songList");
     list.innerHTML = "";
     state.songs.forEach((song) => {
+      const status = state.packageStatuses[song.id];
+      const ready = status && status.projectAttached && status.stemCount > 0;
       const button = document.createElement("button");
-      button.className = "data-row";
+      button.className = "data-row song-data-row";
       button.innerHTML =
         '<span><b>' + escapeHtml(song.title) + '</b><small>' +
         escapeHtml([song.artist, song.bpm + " BPM", song.key].filter(Boolean).join(" · ")) +
-        '</small></span><span class="arrow">›</span>';
+        '</small></span><span class="package-mini ' + (ready ? "ready" : "waiting") + '">' +
+        (ready ? "FILES READY" : (status ? (status.stemCount + " STEMS") : "CHECKING")) +
+        '</span><span class="arrow">›</span>';
       button.addEventListener("click", () => editSong(song));
       list.appendChild(button);
     });
@@ -142,16 +216,21 @@
       : '<option value="">No songs saved</option>';
   }
 
-  async function saveSong() {
+  async function saveSong(copyAsNew = false) {
     showError("");
     try {
-      const song = await invoke("save_song", { song: songPayload() });
+      const payload = songPayload();
+      if (copyAsNew) payload.id = null;
+      const song = await invoke("save_song", { song: payload });
       await loadLibrary();
       editSong(song);
       recomputeArrangement();
       renderLive();
+      showNotice(copyAsNew ? "Created a new song package." : (payload.id ? "Song updated." : "Song created."));
+      return song;
     } catch (error) {
       showError(error);
+      return null;
     }
   }
 
@@ -183,7 +262,8 @@
     state.editingSetlistId = setlist.id;
     state.draftItems = setlist.items.map((item) => ({
       ...item,
-      transition: normalizeTransition(item.transition)
+      transition: normalizeTransition(item.transition),
+      transposeSemitones: Number(item.transposeSemitones || 0)
     }));
     $("setlistEditorTitle").textContent = setlist.title;
     $("setlistTitle").value = setlist.title;
@@ -292,6 +372,8 @@
     state.draftItems.forEach((item, index) => {
       const song = state.songs.find((entry) => entry.id === item.songId);
       item.transition = normalizeTransition(item.transition);
+      item.transposeSemitones = Number(item.transposeSemitones || 0);
+
       const row = document.createElement("div");
       row.className = "setlist-item transition-setlist-item";
       row.innerHTML =
@@ -300,7 +382,30 @@
         escapeHtml(song ? song.bpm + " BPM" + (song.key ? " · " + song.key : "") : "Missing song") +
         '</small></span>' +
         '<div class="mini-actions"><button data-up>↑</button><button data-down>↓</button><button data-remove>×</button></div>' +
+        '<div class="song-key-control">' +
+          '<label>KEY SHIFT<select data-transpose>' +
+            Array.from({length:25},(_,i)=>i-12).map((value) =>
+              '<option value="' + value + '">' + (value === 0 ? "Original" : (value > 0 ? "+" + value : value) + " semitone" + (Math.abs(value) === 1 ? "" : "s")) + '</option>'
+            ).join("") +
+          '</select></label>' +
+          '<span data-effective-key></span>' +
+        '</div>' +
         '<div class="transition-editor"></div>';
+
+      const transpose = row.querySelector("[data-transpose]");
+      transpose.value = String(item.transposeSemitones);
+      const effective = row.querySelector("[data-effective-key]");
+      const refreshEffectiveKey = () => {
+        const shift = Number(transpose.value || 0);
+        item.transposeSemitones = shift;
+        const original = song && song.key ? song.key : "";
+        const result = transposeKey(original, shift);
+        effective.textContent = original
+          ? (shift ? original + " → " + (result || original) : original + " · original")
+          : (shift ? (shift > 0 ? "+" : "") + shift + " st" : "No key metadata");
+      };
+      transpose.addEventListener("change", refreshEffectiveKey);
+      refreshEffectiveKey();
 
       const up = row.querySelector("[data-up]");
       const down = row.querySelector("[data-down]");
@@ -336,7 +441,8 @@
       items: state.draftItems.map((item) => ({
         id: item.id,
         songId: item.songId,
-        transition: normalizeTransition(item.transition)
+        transition: normalizeTransition(item.transition),
+        transposeSemitones: Number(item.transposeSemitones || 0)
       }))
     };
   }
@@ -405,6 +511,7 @@
         artist: song.artist || "",
         bpm: Number(song.bpm),
         key: song.key || "",
+        transposeSemitones: Number(item.transposeSemitones || 0),
         meter: song.meter,
         startBeat,
         endBeat,
@@ -579,32 +686,121 @@
     if (!tracks.length) $("desktopMixer").innerHTML = '<div class="empty">Open Ableton and load Luma Live.amxd to see track controls.</div>';
   }
 
-  function renderScenes() {
-    const scenes = state.live && Array.isArray(state.live.scenes) ? state.live.scenes : [];
-    const signature = scenes.map((scene) => scene.index + ":" + scene.name).join("|");
+  function renderBusk() {
+    const live = state.live || {};
+    const session = live.session || {};
+    const tracks = Array.isArray(session.tracks) ? session.tracks : [];
+    const scenes = Array.isArray(session.scenes) && session.scenes.length ? session.scenes : (Array.isArray(live.scenes) ? live.scenes : []);
 
-    if (signature !== state.sceneSignature) {
-      state.sceneSignature = signature;
-      $("desktopSceneGrid").innerHTML = "";
-      scenes.forEach((scene) => {
-        const button = document.createElement("button");
-        button.className = "desktop-scene";
-        button.dataset.sceneIndex = scene.index;
-        button.innerHTML =
-          '<span>' + String(scene.number).padStart(2, "0") + '</span>' +
-          '<strong>' + escapeHtml(scene.name) + '</strong>';
-        button.addEventListener("click", () => direct({
-          type: "fire_scene",
-          args: { scene: { index: scene.index } }
-        }).catch(() => {}));
-        $("desktopSceneGrid").appendChild(button);
-      });
+    $("desktopBuskMeta").textContent = [
+      tracks.length + " tracks",
+      scenes.length + " scenes",
+      Number.isFinite(Number(live.tempo)) ? Math.round(Number(live.tempo) * 10) / 10 + " BPM" : null
+    ].filter(Boolean).join(" · ");
+
+    const signature = JSON.stringify({
+      activeSceneIndex: live.activeSceneIndex,
+      tracks: tracks.map((track) => [
+        track.index, track.name, track.color, track.playingSlotIndex, track.firedSlotIndex,
+        (track.clips || []).map((clip) => [clip.sceneIndex, clip.hasClip, clip.name, clip.color, clip.isRecording])
+      ]),
+      scenes: scenes.map((scene) => [scene.index, scene.name, scene.color, scene.tempoEnabled, scene.tempo, scene.isTriggered])
+    });
+    if (signature === state.buskSignature) return;
+    state.buskSignature = signature;
+
+    const host = $("desktopBuskGrid");
+    host.innerHTML = "";
+    if (!tracks.length || !scenes.length) {
+      host.innerHTML = '<div class="empty boxed">No Session View grid yet. Click Sync after Ableton finishes loading.</div>';
+      return;
     }
 
-    $("desktopSceneGrid").querySelectorAll(".desktop-scene").forEach((button) => {
-      button.classList.toggle("active", Number(button.dataset.sceneIndex) === Number(state.live && state.live.activeSceneIndex));
+    const grid = document.createElement("div");
+    grid.className = "desktop-session-matrix";
+    grid.style.gridTemplateColumns = "150px 52px repeat(" + tracks.length + ", minmax(132px,1fr))";
+
+    const sceneHeader = document.createElement("div");
+    sceneHeader.className = "busk-matrix-label";
+    sceneHeader.textContent = "SCENES";
+    grid.appendChild(sceneHeader);
+    grid.appendChild(document.createElement("div"));
+
+    tracks.forEach((track, index) => {
+      const header = document.createElement("div");
+      header.className = "busk-track-header";
+      header.style.borderTopColor = liveColor(track.color);
+      header.innerHTML =
+        '<span>' + String(index + 1).padStart(2, "0") + '</span>' +
+        '<strong>' + escapeHtml(track.name || ("Track " + (index + 1))) + '</strong>' +
+        '<small>' + (Number(track.playingSlotIndex) >= 0 ? "PLAYING SCENE " + (Number(track.playingSlotIndex) + 1) : "STOPPED") + '</small>';
+      grid.appendChild(header);
     });
-    if (!scenes.length) $("desktopSceneGrid").innerHTML = '<div class="empty">No Session View scenes found.</div>';
+
+    scenes.forEach((scene, sceneIndex) => {
+      const info = document.createElement("div");
+      info.className = "busk-scene-info" + (Number(scene.index) === Number(live.activeSceneIndex) ? " active" : "");
+      info.innerHTML =
+        '<strong>' + escapeHtml(scene.name || ("Scene " + (sceneIndex + 1))) + '</strong>' +
+        '<small>' + String(Number(scene.index ?? sceneIndex) + 1).padStart(2, "0") +
+        (scene.tempoEnabled && Number(scene.tempo) > 0 ? " · " + Math.round(Number(scene.tempo) * 10) / 10 + " BPM" : "") + '</small>';
+      grid.appendChild(info);
+
+      const sceneLaunch = document.createElement("button");
+      sceneLaunch.className = "busk-scene-launch";
+      sceneLaunch.textContent = "▶";
+      sceneLaunch.title = "Launch " + (scene.name || ("Scene " + (sceneIndex + 1)));
+      sceneLaunch.addEventListener("click", () => direct({
+        type: "fire_scene",
+        args: { scene: { index: Number(scene.index ?? sceneIndex) } }
+      }).catch((error) => showError(error)));
+      grid.appendChild(sceneLaunch);
+
+      tracks.forEach((track) => {
+        const clip = (track.clips || []).find((entry) => Number(entry.sceneIndex) === Number(scene.index ?? sceneIndex));
+        const cell = document.createElement("button");
+        const hasClip = !!(clip && clip.hasClip);
+        const playing = Number(track.playingSlotIndex) === Number(scene.index ?? sceneIndex);
+        const fired = Number(track.firedSlotIndex) === Number(scene.index ?? sceneIndex);
+        cell.className = "desktop-clip-cell" + (hasClip ? " has-clip" : "") + (playing ? " playing" : "") + (fired ? " fired" : "");
+
+        if (hasClip) {
+          const bg = liveColor(clip.color, liveColor(track.color));
+          cell.style.background = bg;
+          cell.style.color = readableText(bg);
+          cell.innerHTML =
+            '<strong>' + escapeHtml(clip.name || "Clip") + '</strong>' +
+            '<small>' + (playing ? "PLAYING" : fired ? "QUEUED" : "Launch") + '</small>';
+          cell.addEventListener("click", () => direct({
+            type: "fire_clip",
+            args: { trackIndex: Number(track.index), sceneIndex: Number(scene.index ?? sceneIndex) }
+          }).catch((error) => showError(error)));
+        } else {
+          cell.disabled = true;
+          cell.innerHTML = '<span class="empty-dot">■</span>';
+        }
+        grid.appendChild(cell);
+      });
+    });
+
+    const stopLabel = document.createElement("div");
+    stopLabel.className = "busk-matrix-label";
+    stopLabel.textContent = "TRACK STOP";
+    grid.appendChild(stopLabel);
+    grid.appendChild(document.createElement("div"));
+
+    tracks.forEach((track) => {
+      const stop = document.createElement("button");
+      stop.className = "busk-track-stop";
+      stop.textContent = "■ STOP";
+      stop.addEventListener("click", () => direct({
+        type: "stop_track",
+        args: { trackIndex: Number(track.index) }
+      }).catch((error) => showError(error)));
+      grid.appendChild(stop);
+    });
+
+    host.appendChild(grid);
   }
 
   function renderService() {
@@ -664,7 +860,7 @@
 
     renderSections(placement, ctx);
     renderMixer();
-    renderScenes();
+    renderBusk();
     renderService();
   }
 
@@ -831,13 +1027,18 @@
   }
 
   async function loadLibrary() {
-    const payload = await invoke("get_library");
+    const [payload, statuses] = await Promise.all([
+      invoke("get_library"),
+      invoke("get_song_package_statuses").catch(() => [])
+    ]);
     state.songs = payload.songs || [];
     state.setlists = payload.setlists || [];
+    state.packageStatuses = Object.fromEntries((statuses || []).map((status) => [status.songId, status]));
     renderSongs();
     renderSetlists();
     renderDraft();
     recomputeArrangement();
+    renderSongPackageStatus();
   }
 
   async function loadRuntime() {
@@ -859,8 +1060,12 @@
     }
   }
 
-  $("newSong").addEventListener("click", resetSongEditor);
-  $("saveSong").addEventListener("click", saveSong);
+  $("newSong").addEventListener("click", () => {
+    resetSongEditor();
+    $("songTitle").focus();
+  });
+  $("saveSong").addEventListener("click", () => saveSong(false));
+  $("saveSongCopy").addEventListener("click", () => saveSong(true));
   $("deleteSong").addEventListener("click", async () => {
     if (!state.editingSongId || !confirm("Delete this song?")) return;
     try {
@@ -876,7 +1081,7 @@
   $("addSong").addEventListener("click", () => {
     const songId = $("songPicker").value;
     if (!songId) return;
-    state.draftItems.push({ id: uid(), songId, transition: defaultTransition() });
+    state.draftItems.push({ id: uid(), songId, transition: defaultTransition(), transposeSemitones: 0 });
     renderDraft();
   });
   $("saveSetlist").addEventListener("click", saveSetlist);
@@ -941,11 +1146,64 @@
     args: { enabled: !(state.live && state.live.metronome) }
   }).catch((error) => showError(error)));
   $("desktopStopAll").addEventListener("click", () => direct({ type: "stop_all_clips", args: {} }).catch((error) => showError(error)));
+  $("desktopBuskPlay").addEventListener("click", () => direct({ type: "start_playback", args: {} }).catch((error) => showError(error)));
+  $("desktopBuskStop").addEventListener("click", () => direct({ type: "stop_playback", args: {} }).catch((error) => showError(error)));
+  $("desktopBuskSync").addEventListener("click", async () => {
+    try {
+      await direct({ type: "refresh_session", args: {} });
+    } catch (_) {
+      await loadLive();
+    }
+  });
 
   $("desktopPrevSong").addEventListener("click", () => jumpAdjacentSong(-1));
   $("desktopNextSong").addEventListener("click", () => jumpAdjacentSong(1));
   $("desktopPrevSection").addEventListener("click", () => jumpAdjacentSection(-1));
   $("desktopNextSectionBtn").addEventListener("click", () => jumpAdjacentSection(1));
+
+  $("openSongFolder").addEventListener("click", async () => {
+    if (!state.editingSongId) return;
+    try {
+      await invoke("reveal_song_package", { id: state.editingSongId });
+    } catch (error) { showError(error); }
+  });
+
+  $("attachSongProject").addEventListener("click", async () => {
+    if (!state.editingSongId) return;
+    try {
+      const status = await invoke("attach_song_project", { id: state.editingSongId });
+      state.packageStatuses[state.editingSongId] = status;
+      renderSongs();
+      renderSongPackageStatus();
+      showNotice("Ableton Project copied into this song package.");
+    } catch (error) {
+      if (!String(error).toLowerCase().includes("cancel")) showError(error);
+    }
+  });
+
+  $("importSongStems").addEventListener("click", async () => {
+    if (!state.editingSongId) return;
+    try {
+      const status = await invoke("import_song_stems", { id: state.editingSongId });
+      state.packageStatuses[state.editingSongId] = status;
+      renderSongs();
+      renderSongPackageStatus();
+      showNotice(status.stemCount + " original stems detected.");
+    } catch (error) {
+      if (!String(error).toLowerCase().includes("cancel")) showError(error);
+    }
+  });
+
+  $("rescanSongPackage").addEventListener("click", async () => {
+    if (!state.editingSongId) return;
+    try {
+      const status = await invoke("rescan_song_package", { id: state.editingSongId });
+      state.packageStatuses[state.editingSongId] = status;
+      renderSongs();
+      renderSongPackageStatus();
+      showNotice("Song package rescanned.");
+    } catch (error) { showError(error); }
+  });
 
   $("revealLibrary").addEventListener("click", async () => {
     try {
@@ -957,6 +1215,34 @@
   });
 
   $("setlistGap").addEventListener("input", () => renderDraft());
+
+  $("runSystemCheck").addEventListener("click", async () => {
+    const button = $("runSystemCheck");
+    const host = $("systemCheckResults");
+    button.disabled = true;
+    button.textContent = "Checking…";
+    host.innerHTML = "";
+    try {
+      const result = await invoke("run_system_check");
+      const packages = result.packages || [];
+      const ready = packages.filter((item) => item.projectAttached && item.stemCount > 0).length;
+      host.innerHTML =
+        '<div class="check-row ' + (result.libraryWritable ? "pass" : "fail") + '"><strong>Library write access</strong><span>' + (result.libraryWritable ? "PASS" : "FAIL") + '</span></div>' +
+        '<div class="check-row ' + (result.templateExists ? "pass" : "warn") + '"><strong>Church Standard.als</strong><span>' + (result.templateExists ? "FOUND" : "MISSING") + '</span></div>' +
+        '<div class="check-row ' + (result.bridgeConnected ? "pass" : "fail") + '"><strong>Ableton adapter</strong><span>' + (result.bridgeConnected ? "CONNECTED" : "OFFLINE") + '</span></div>' +
+        '<div class="check-row ' + (ready === packages.length && packages.length ? "pass" : "warn") + '"><strong>Song packages</strong><span>' + ready + " / " + packages.length + ' READY</span></div>' +
+        packages.map((item) =>
+          '<div class="package-check"><strong>' + escapeHtml((state.songs.find((song) => song.id === item.songId) || {}).title || item.songId) + '</strong><small>' +
+          escapeHtml((item.sourceAls || "No ALS") + " · " + item.stemCount + " stems · " + item.cueCount + " cues") +
+          '</small></div>'
+        ).join("");
+    } catch (error) {
+      host.innerHTML = '<div class="check-row fail"><strong>System check failed</strong><span>' + escapeHtml(error) + '</span></div>';
+    } finally {
+      button.disabled = false;
+      button.textContent = "Run Full Check";
+    }
+  });
 
   $("newPairingCode").addEventListener("click", async () => {
     try {
