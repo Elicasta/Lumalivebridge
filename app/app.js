@@ -687,6 +687,10 @@
       });
       state.live = live;
       renderLive();
+      if (sectionId && live && live.queuedJump) {
+        const section = (song.sections || []).find((item) => item.id === sectionId);
+        showNotice("Queued " + (section ? section.name : "section") + " for the next bar.");
+      }
     } catch (error) {
       showError(error);
     }
