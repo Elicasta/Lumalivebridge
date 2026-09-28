@@ -9,6 +9,14 @@ fn normalized(value: &str) -> String {
     value.trim().to_lowercase()
 }
 
+fn normalized_target(value: &str) -> String {
+    let value = normalized(value);
+    value
+        .strip_prefix("the ")
+        .unwrap_or(value.as_str())
+        .to_string()
+}
+
 fn parse_section_specs(value: &str) -> Result<(Vec<SectionInput>, i64), String> {
     let splitter = Regex::new(r"(?i)\s*,\s*|\s+and\s+").unwrap();
     let repeat_re = Regex::new(r"(?i)\s+(?:x|×)\s*(\d+)\s*$").unwrap();
@@ -188,7 +196,7 @@ pub async fn preview(state: &AppState, text: &str) -> Result<Value, String> {
     let lower = normalized(raw);
 
     let song_build_re = Regex::new(
-        r"(?i)^create\s+(?:a\s+)?(?:worship\s+|praise\s+|church\s+)?song\s+(?:called|named)\s+(.+?)\s+at\s+(\d+(?:\.\d+)?)\s*bpm(?:\s+(?:in|at)\s+(\d+)\s*/\s*(\d+))?\s+with\s+(.+)$"
+        r"(?i)^create\s+(?:a\s+)?(?:worship\s+|praise\s+|church\s+)?song(?:\s+(?:called|named))?\s+(.+?)\s+at\s+(\d+(?:\.\d+)?)\s*bpm(?:\s+in\s+([A-G](?:#|b)?m?))?(?:\s+(?:in|at)\s+(\d+)\s*/\s*(\d+))?\s+with\s+(.+)$"
     ).unwrap();
     if let Some(caps) = song_build_re.captures(raw) {
         let title = caps[1].trim();
@@ -196,10 +204,11 @@ pub async fn preview(state: &AppState, text: &str) -> Result<Value, String> {
         if !(20.0..=999.0).contains(&bpm) {
             return Err("Tempo must be between 20 and 999 BPM".into());
         }
-        let meter = if caps.get(3).is_some() && caps.get(4).is_some() {
+        let song_key = caps.get(3).map(|value| value.as_str().to_string()).unwrap_or_default();
+        let meter = if caps.get(4).is_some() && caps.get(5).is_some() {
             Meter {
-                numerator: caps[3].parse().map_err(|_| "Invalid meter".to_string())?,
-                denominator: caps[4].parse().map_err(|_| "Invalid meter".to_string())?,
+                numerator: caps[4].parse().map_err(|_| "Invalid meter".to_string())?,
+                denominator: caps[5].parse().map_err(|_| "Invalid meter".to_string())?,
             }
         } else {
             Meter::default()
@@ -207,14 +216,20 @@ pub async fn preview(state: &AppState, text: &str) -> Result<Value, String> {
         if meter.numerator < 1 || meter.numerator > 32 || ![1, 2, 4, 8, 16].contains(&meter.denominator) {
             return Err("Meter must use a 1–32 numerator and denominator 1, 2, 4, 8, or 16".into());
         }
-        let (sections, length_bars) = parse_section_specs(&caps[5])?;
+        let (sections, length_bars) = parse_section_specs(&caps[6])?;
+        let key_label = if song_key.is_empty() {
+            String::new()
+        } else {
+            format!(" in {}", song_key)
+        };
         return Ok(preview_value(
             raw,
             "create_song",
             format!(
-                "Create {} at {} BPM in {}/{} with {} sections across {} bars",
+                "Create {} at {} BPM{} in {}/{} with {} sections across {} bars",
                 title,
                 bpm,
+                key_label,
                 meter.numerator,
                 meter.denominator,
                 sections.len(),
@@ -311,15 +326,15 @@ pub async fn preview(state: &AppState, text: &str) -> Result<Value, String> {
         return Ok(preview_value(raw, "stop", "Stop Arrangement playback".into(), true, false));
     }
 
-    if matches!(lower.as_str(), "click on" | "metronome on" | "turn click on") {
+    if matches!(lower.as_str(), "click on" | "metronome on" | "turn click on" | "turn metronome on") {
         return Ok(preview_value(raw, "click", "Turn the Ableton click on".into(), true, false));
     }
 
-    if matches!(lower.as_str(), "click off" | "metronome off" | "turn click off") {
+    if matches!(lower.as_str(), "click off" | "metronome off" | "turn click off" | "turn metronome off") {
         return Ok(preview_value(raw, "click", "Turn the Ableton click off".into(), true, false));
     }
 
-    let track_re = Regex::new(r"(?i)^(mute|unmute|solo|unsolo)\s+(.+)$").unwrap();
+    let track_re = Regex::new(r"(?i)^(mute|unmute|solo|unsolo)\s+(?:the\s+)?(?:track\s+)?(.+)$").unwrap();
     if let Some(caps) = track_re.captures(raw) {
         let action = normalized(&caps[1]);
         let track = caps[2].trim();
@@ -394,7 +409,7 @@ pub async fn preview(state: &AppState, text: &str) -> Result<Value, String> {
 
     let jump_re = Regex::new(r"(?i)^(?:go|jump)(?:\s+to)?\s+(.+)$").unwrap();
     if let Some(caps) = jump_re.captures(raw) {
-        let requested = normalized(&caps[1]);
+        let requested = normalized_target(&caps[1]);
         let (arrangement, context) = live_context(state).await?;
         let song = arrangement
             .songs
@@ -495,9 +510,9 @@ pub async fn preview(state: &AppState, text: &str) -> Result<Value, String> {
         ));
     }
 
-    let load_re = Regex::new(r"(?i)^(?:load|sync)\s+(.+?)(?:\s+(?:setlist|service))?$").unwrap();
+    let load_re = Regex::new(r"(?i)^(?:load|sync)\s+(?:(?:setlist|service)\s+)?(.+?)(?:\s+(?:setlist|service))?$").unwrap();
     if let Some(caps) = load_re.captures(raw) {
-        let requested = normalized(&caps[1]);
+        let requested = normalized_target(&caps[1]);
         let setlist = state
             .db
             .list_setlists()?
@@ -595,7 +610,7 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
     let lower = normalized(raw);
 
     let song_build_re = Regex::new(
-        r"(?i)^create\s+(?:a\s+)?(?:worship\s+|praise\s+|church\s+)?song\s+(?:called|named)\s+(.+?)\s+at\s+(\d+(?:\.\d+)?)\s*bpm(?:\s+(?:in|at)\s+(\d+)\s*/\s*(\d+))?\s+with\s+(.+)$"
+        r"(?i)^create\s+(?:a\s+)?(?:worship\s+|praise\s+|church\s+)?song(?:\s+(?:called|named))?\s+(.+?)\s+at\s+(\d+(?:\.\d+)?)\s*bpm(?:\s+in\s+([A-G](?:#|b)?m?))?(?:\s+(?:in|at)\s+(\d+)\s*/\s*(\d+))?\s+with\s+(.+)$"
     ).unwrap();
     if let Some(caps) = song_build_re.captures(raw) {
         let title = caps[1].trim().to_string();
@@ -603,21 +618,22 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
         if !(20.0..=999.0).contains(&bpm) {
             return Err("Tempo must be between 20 and 999 BPM".into());
         }
-        let meter = if caps.get(3).is_some() && caps.get(4).is_some() {
+        let song_key = caps.get(3).map(|value| value.as_str().to_string()).unwrap_or_default();
+        let meter = if caps.get(4).is_some() && caps.get(5).is_some() {
             Meter {
-                numerator: caps[3].parse().map_err(|_| "Invalid meter".to_string())?,
-                denominator: caps[4].parse().map_err(|_| "Invalid meter".to_string())?,
+                numerator: caps[4].parse().map_err(|_| "Invalid meter".to_string())?,
+                denominator: caps[5].parse().map_err(|_| "Invalid meter".to_string())?,
             }
         } else {
             Meter::default()
         };
-        let (sections, length_bars) = parse_section_specs(&caps[5])?;
+        let (sections, length_bars) = parse_section_specs(&caps[6])?;
         let song = state.db.save_song(SongInput {
             id: None,
             title: title.clone(),
             artist: None,
             bpm,
-            key: None,
+            key: if song_key.is_empty() { None } else { Some(song_key) },
             meter,
             length_bars,
             sections,
@@ -699,17 +715,17 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
         return Ok(json!({ "summary": "Arrangement playback stopped" }));
     }
 
-    if matches!(lower.as_str(), "click on" | "metronome on" | "turn click on") {
+    if matches!(lower.as_str(), "click on" | "metronome on" | "turn click on" | "turn metronome on") {
         bridge::send("set_metronome", json!({ "enabled": true })).await?;
         return Ok(json!({ "summary": "Click turned on" }));
     }
 
-    if matches!(lower.as_str(), "click off" | "metronome off" | "turn click off") {
+    if matches!(lower.as_str(), "click off" | "metronome off" | "turn click off" | "turn metronome off") {
         bridge::send("set_metronome", json!({ "enabled": false })).await?;
         return Ok(json!({ "summary": "Click turned off" }));
     }
 
-    let track_re = Regex::new(r"(?i)^(mute|unmute|solo|unsolo)\s+(.+)$").unwrap();
+    let track_re = Regex::new(r"(?i)^(mute|unmute|solo|unsolo)\s+(?:the\s+)?(?:track\s+)?(.+)$").unwrap();
     if let Some(caps) = track_re.captures(raw) {
         let action = normalized(&caps[1]);
         let track = caps[2].trim();
@@ -768,7 +784,7 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
 
     let jump_re = Regex::new(r"(?i)^(?:go|jump)(?:\s+to)?\s+(.+)$").unwrap();
     if let Some(caps) = jump_re.captures(raw) {
-        let requested = normalized(&caps[1]);
+        let requested = normalized_target(&caps[1]);
         let (arrangement, context) = live_context(state).await?;
         let song = arrangement
             .songs
@@ -897,9 +913,9 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
         return jump(state, &arrangement, &song.instance_id, None).await;
     }
 
-    let load_re = Regex::new(r"(?i)^(?:load|sync)\s+(.+?)(?:\s+(?:setlist|service))?$").unwrap();
+    let load_re = Regex::new(r"(?i)^(?:load|sync)\s+(?:(?:setlist|service)\s+)?(.+?)(?:\s+(?:setlist|service))?$").unwrap();
     if let Some(caps) = load_re.captures(raw) {
-        let requested = normalized(&caps[1]);
+        let requested = normalized_target(&caps[1]);
         let setlist = state
             .db
             .list_setlists()?
