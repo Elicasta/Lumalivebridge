@@ -574,7 +574,9 @@
       renderSetlists();
       renderLive();
       go("live");
-      showNotice("Setlist synced to Ableton.");
+      showNotice(data.syncError
+        ? "Setlist loaded locally. Ableton sync is pending."
+        : "Setlist synced to Ableton.");
     } catch (error) {
       showError(error);
     }
