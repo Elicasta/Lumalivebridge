@@ -2,6 +2,7 @@ use crate::arrangement::{build_arrangement, jump_target, locate_position, Arrang
 use crate::bridge;
 use crate::command;
 use crate::models::{RuntimeInfo, Setlist, SetlistInput, Song, SongInput};
+use crate::pairing::PairingFailure;
 use crate::state::AppState;
 use axum::{
     extract::{Path, State as AxumState},
@@ -92,6 +93,45 @@ async fn health() -> Json<Health> {
         offline_ready: true,
         bridge_port: 17878,
     })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PairRequest {
+    code: String,
+    device_name: Option<String>,
+}
+
+async fn pair(
+    AxumState(state): AxumState<AppState>,
+    Json(input): Json<PairRequest>,
+) -> Result<Json<Value>, ApiError> {
+    match state.pairing.verify(&input.code) {
+        Ok(()) => {
+            let _device_name = input.device_name.as_deref().unwrap_or("iPad");
+            Ok(Json(json!({
+                "ok": true,
+                "token": state.remote_token.as_str(),
+                "paired": true
+            })))
+        }
+        Err(PairingFailure::Invalid) => Err(api_error(
+            StatusCode::UNAUTHORIZED,
+            "That six-digit pairing code is not valid",
+        )),
+        Err(PairingFailure::Locked(seconds)) => Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({
+                "ok": false,
+                "error": "Too many incorrect codes. Try again shortly.",
+                "retryAfterSeconds": seconds
+            })),
+        )),
+        Err(PairingFailure::Internal(message)) => Err(api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            message,
+        )),
+    }
 }
 
 fn active_arrangement(state: &AppState) -> Result<Option<Arrangement>, String> {
@@ -469,6 +509,7 @@ pub async fn run_server(state: AppState) -> anyhow::Result<()> {
         .route("/manifest.webmanifest", get(manifest))
         .route("/sw.js", get(service_worker))
         .route("/health", get(health))
+        .route("/api/pair", post(pair))
         .route("/api/runtime", get(runtime))
         .route("/api/library", get(library))
         .route("/api/state", get(live_state))
