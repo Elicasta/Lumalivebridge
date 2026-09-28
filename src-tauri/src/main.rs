@@ -1,6 +1,9 @@
+mod arrangement;
+mod bridge;
 mod db;
 mod lan;
 mod models;
+mod plain;
 mod state;
 
 use crate::db::Database;
@@ -156,6 +159,7 @@ fn main() {
                 db,
                 runtime,
                 remote_token: token,
+                bridge: crate::bridge::AbletonBridge::new(),
             };
 
             app.manage(state.clone());
