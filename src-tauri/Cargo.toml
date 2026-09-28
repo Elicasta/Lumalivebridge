@@ -1,6 +1,6 @@
 [package]
 name = "luma-live"
-version = "0.5.0"
+version = "0.5.1"
 description = "Offline-first church live show control"
 authors = ["EC Creative Studios"]
 edition = "2021"
