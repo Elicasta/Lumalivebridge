@@ -436,9 +436,18 @@ pub fn adopt_project(root: &Path, song: &Song, source: &Path) -> Result<SongPack
     }
     let package = ensure_song_package(root, song)?;
     let project_root = package.join("Project");
-    if project_root.exists() {
-        fs::remove_dir_all(&project_root).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&project_root).map_err(|e| e.to_string())?;
+
+    let source_canonical = fs::canonicalize(source).map_err(|e| e.to_string())?;
+    let project_canonical = fs::canonicalize(&project_root).map_err(|e| e.to_string())?;
+    if source_canonical.starts_with(&project_canonical) {
+        // The user already saved the Ableton Project inside the canonical Luma package.
+        // Never delete/copy it onto itself.
+        ensure_song_package(root, song)?;
+        return package_status(root, song);
     }
+
+    fs::remove_dir_all(&project_root).map_err(|e| e.to_string())?;
     fs::create_dir_all(&project_root).map_err(|e| e.to_string())?;
     let name = source
         .file_name()
