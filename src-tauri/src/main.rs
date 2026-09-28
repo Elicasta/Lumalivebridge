@@ -305,7 +305,7 @@ fn main() {
                 let server_state = state.clone();
                 if let Err(error) = lan::run_server(state).await {
                     let message = format!(
-                        "Luma Live could not start the remote on port 7878 ({error}). If the old Max bridge is still loaded, update/reload it so it uses the private 127.0.0.1:17878 adapter port."
+                        "Luma Live could not start its LAN remote on any port from 7878 through 7897 ({error})."
                     );
                     append_diagnostic(&format!("LAN server failed: {message}"));
                     eprintln!("{message}");
