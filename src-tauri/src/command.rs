@@ -346,6 +346,104 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
         }
     }
 
+    let setlist_build_re = Regex::new(
+        r"(?i)^(?:create|build|make)\s+(?:a\s+)?(?:setlist|service)\s+(?:(?:called|named)\s+)?(.+?)\s+with\s+(.+)$"
+    ).unwrap();
+    if let Some(caps) = setlist_build_re.captures(raw) {
+        let title = caps[1].trim().to_string();
+        let raw_songs = caps[2].trim().trim_end_matches('.');
+        let splitter = Regex::new(r"\s*,\s*|\s+and\s+").unwrap();
+        let requested: Vec<String> = splitter
+            .split(raw_songs)
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(ToString::to_string)
+            .collect();
+
+        if requested.is_empty() {
+            return Err("Add at least one song to the setlist".into());
+        }
+
+        let library = state.db.list_songs()?;
+        let mut items = Vec::new();
+        for name in &requested {
+            let needle = normalized(name);
+            let song = library
+                .iter()
+                .find(|song| normalized(&song.title) == needle)
+                .ok_or_else(|| format!("Song \"{}\" was not found in the library", name))?;
+            items.push(SetlistItemInput {
+                id: None,
+                song_id: song.id.clone(),
+            });
+        }
+
+        let setlist = state.db.save_setlist(SetlistInput {
+            id: None,
+            title: title.clone(),
+            gap_bars: 4,
+            items,
+        })?;
+
+        return Ok(json!({
+            "summary": format!("Created {} with {} songs", setlist.title, setlist.items.len())
+        }));
+    }
+
+    let remove_re = Regex::new(
+        r"(?i)^remove\s+(.+?)\s+from\s+(.+?)(?:\s+(?:setlist|service))?$"
+    ).unwrap();
+    if let Some(caps) = remove_re.captures(raw) {
+        let song_name = normalized(&caps[1]);
+        let setlist_name = normalized(&caps[2]);
+
+        let library = state.db.list_songs()?;
+        let song = library
+            .iter()
+            .find(|song| normalized(&song.title) == song_name)
+            .ok_or_else(|| format!("Song \"{}\" was not found", caps[1].trim()))?;
+
+        let setlist = state
+            .db
+            .list_setlists()?
+            .into_iter()
+            .find(|item| normalized(&item.title) == setlist_name)
+            .ok_or_else(|| format!("Setlist \"{}\" was not found", caps[2].trim()))?;
+
+        let before = setlist.items.len();
+        let mut removed = false;
+        let items: Vec<SetlistItemInput> = setlist
+            .items
+            .iter()
+            .filter_map(|item| {
+                if !removed && item.song_id == song.id {
+                    removed = true;
+                    None
+                } else {
+                    Some(SetlistItemInput {
+                        id: Some(item.id.clone()),
+                        song_id: item.song_id.clone(),
+                    })
+                }
+            })
+            .collect();
+
+        if !removed || items.len() == before {
+            return Err(format!("{} is not in {}", song.title, setlist.title));
+        }
+
+        state.db.save_setlist(SetlistInput {
+            id: Some(setlist.id.clone()),
+            title: setlist.title.clone(),
+            gap_bars: setlist.gap_bars,
+            items,
+        })?;
+
+        return Ok(json!({
+            "summary": format!("Removed {} from {}", song.title, setlist.title)
+        }));
+    }
+
     let load_song_re = Regex::new(r"(?i)^(?:load|open|bring\s+in)\s+(?:the\s+)?song\s+(.+)$").unwrap();
     if let Some(caps) = load_song_re.captures(raw) {
         let requested = normalized(caps[1].trim().trim_end_matches('.'));
