@@ -102,7 +102,9 @@ Stems and cue assets are planned additions to this same canonical song record. T
 
 A setlist is a service-specific ordered list of reusable songs.
 
-When a setlist is synced, Luma builds an Arrangement map and sends namespaced Ableton locators:
+A service can be made active even when Ableton is offline. Luma stores that choice locally, builds the Arrangement map immediately, and syncs namespaced Ableton locators whenever the Max adapter is available.
+
+When a setlist is synced to Ableton, Luma sends:
 
 ```text
 LL|SONG|<songId>|<title>
