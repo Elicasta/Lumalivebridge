@@ -1,6 +1,6 @@
 *{box-sizing:border-box}
 :root{color-scheme:dark;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;background:#090a0c;color:#f3f4f5;-webkit-font-smoothing:antialiased}
-html,body{min-height:100%}
+html,body{min-height:100%;overflow-anchor:none}
 body{margin:0;background:#090a0c;overscroll-behavior:none}
 button,input{font:inherit;color:inherit}
 button{appearance:none;border:1px solid #30343a;border-radius:11px;background:#1c1f23;font-weight:760;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
@@ -54,6 +54,9 @@ button:disabled{opacity:.35;cursor:default}
 .arrangement-card{margin-top:0}
 .arrangement-card h3{font-size:18px}
 .arrangement-card>p{margin:8px 0 0}
+.service-loader{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:13px}
+.service-loader select{width:100%;min-width:0;border:1px solid #30343a;border-radius:10px;background:#0f1113;color:#f3f4f5;padding:11px 12px;outline:none}
+.service-loader button{min-width:130px}
 .now-next{display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-top:14px}
 .now-next article{border:1px solid #2b2f34;border-radius:13px;background:#101214;padding:14px 15px}
 .now-next strong{display:block;margin-top:7px;font-size:26px;letter-spacing:-.035em}
