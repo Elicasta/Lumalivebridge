@@ -364,6 +364,18 @@ struct PlainCommand {
     text: String,
 }
 
+async fn preview_plain_command(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<PlainCommand>,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    let preview = command::preview(&state, &input.text)
+        .await
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(json!({ "ok": true, "preview": preview })))
+}
+
 async fn plain_command(
     AxumState(state): AxumState<AppState>,
     headers: HeaderMap,
@@ -429,6 +441,7 @@ pub async fn run_server(state: AppState) -> anyhow::Result<()> {
         .route("/api/library", get(library))
         .route("/api/state", get(live_state))
         .route("/api/direct", post(direct))
+        .route("/api/command/preview", post(preview_plain_command))
         .route("/api/command", post(plain_command))
         .route("/api/jump", post(jump))
         .route("/api/songs", post(save_song))
