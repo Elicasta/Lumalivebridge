@@ -682,11 +682,14 @@
   $("syncSetlist").addEventListener("click", () => syncSetlistById(state.editingSetlistId));
   $("deleteSetlist").addEventListener("click", async () => {
     if (!state.editingSetlistId || !confirm("Delete this setlist?")) return;
+    const deletingId = state.editingSetlistId;
     try {
-      await invoke("delete_setlist", { id: state.editingSetlistId });
+      await invoke("delete_setlist", { id: deletingId });
+      if (state.activeSetlistId === deletingId) state.activeSetlistId = null;
       resetSetlistEditor();
-      if (state.activeSetlistId === state.editingSetlistId) state.activeSetlistId = null;
       await loadLibrary();
+      recomputeArrangement();
+      renderLive();
     } catch (error) {
       showError(error);
     }
