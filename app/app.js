@@ -653,17 +653,23 @@
     const host = $("remoteLinks");
     host.innerHTML = "";
     links.forEach((url) => {
+      const baseUrl = url.replace(/\?token=.*/, "");
       const item = document.createElement("div");
       item.className = "remote-link";
-      item.innerHTML = '<code>' + escapeHtml(url.replace(/\?token=.*/, "")) + '</code><button>Copy Full Link</button>';
+      item.innerHTML = '<code>' + escapeHtml(baseUrl) + '</code><button>Copy Address</button>';
       item.querySelector("button").addEventListener("click", async () => {
-        await navigator.clipboard.writeText(url);
+        await navigator.clipboard.writeText(baseUrl);
         item.querySelector("button").textContent = "Copied";
-        setTimeout(() => item.querySelector("button").textContent = "Copy Full Link", 1200);
+        setTimeout(() => item.querySelector("button").textContent = "Copy Address", 1200);
       });
       host.appendChild(item);
     });
     if (!links.length) host.innerHTML = '<div class="empty">Connect this Mac to the same network as the iPad.</div>';
+  }
+
+  async function loadPairingCode() {
+    const data = await invoke("get_pairing_code");
+    $("desktopPairingCode").textContent = data.code || "------";
   }
 
   async function loadLibrary() {
@@ -748,6 +754,16 @@
   $("desktopPrevSection").addEventListener("click", () => jumpAdjacentSection(-1));
   $("desktopNextSectionBtn").addEventListener("click", () => jumpAdjacentSection(1));
 
+  $("newPairingCode").addEventListener("click", async () => {
+    try {
+      const data = await invoke("rotate_pairing_code");
+      $("desktopPairingCode").textContent = data.code || "------";
+      showNotice("New iPad pairing code generated.");
+    } catch (error) {
+      showError(error);
+    }
+  });
+
   $("plainPreview").addEventListener("click", () => previewPlain($("plainCommand").value));
   $("plainRun").addEventListener("click", () => runPlain($("plainCommand").value));
   $("plainApply").addEventListener("click", () => {
@@ -771,7 +787,7 @@
   resetSongEditor();
   resetSetlistEditor();
 
-  Promise.all([loadLibrary(), loadRuntime(), loadLive()]).catch((error) => showError(error));
+  Promise.all([loadLibrary(), loadRuntime(), loadLive(), loadPairingCode()]).catch((error) => showError(error));
   setInterval(() => loadRuntime().catch(() => {}), 2500);
   setInterval(() => loadLive().catch(() => {}), 750);
   // The iPad plain-language surface can mutate the same SQLite library.
