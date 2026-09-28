@@ -67,3 +67,27 @@ pub async fn command(command: Value) -> Result<Value, String> {
 pub async fn send(command_type: &str, args: Value) -> Result<Value, String> {
     command(json!({ "type": command_type, "args": args })).await
 }
+
+
+pub async fn jump_to_time(target: f64) -> Result<Value, String> {
+    if !target.is_finite() || target < 0.0 {
+        return Err("Invalid Ableton song position".into());
+    }
+
+    send("jump_to_time", json!({ "time": target })).await?;
+
+    for _ in 0..8 {
+        tokio::time::sleep(Duration::from_millis(35)).await;
+        let current = state().await?;
+        let reached = current
+            .get("currentSongTime")
+            .and_then(Value::as_f64)
+            .map(|value| (value - target).abs() <= 0.03)
+            .unwrap_or(false);
+        if reached {
+            return Ok(current);
+        }
+    }
+
+    Err(format!("Ableton did not reach the requested section position ({target:.3})"))
+}
