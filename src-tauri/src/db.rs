@@ -621,3 +621,42 @@ impl Database {
         Ok(())
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn song_input(id: Option<&str>, title: &str) -> SongInput {
+        SongInput {
+            id: id.map(str::to_string),
+            title: title.into(),
+            artist: None,
+            bpm: 120.0,
+            key: Some("C".into()),
+            meter: Meter::default(),
+            length_bars: 8,
+            sections: vec![SectionInput { id: None, name: "Intro".into(), start_bar: 1 }],
+        }
+    }
+
+    #[test]
+    fn new_song_with_same_title_gets_a_unique_id() {
+        let db = Database::open_in_memory().unwrap();
+        let first = db.save_song(song_input(None, "Same Title")).unwrap();
+        let second = db.save_song(song_input(None, "Same Title")).unwrap();
+        assert_eq!(first.id, "same-title");
+        assert_eq!(second.id, "same-title-2");
+        assert_eq!(db.list_songs().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn editing_existing_song_keeps_its_id() {
+        let db = Database::open_in_memory().unwrap();
+        let first = db.save_song(song_input(None, "Original")).unwrap();
+        let updated = db.save_song(song_input(Some(&first.id), "Renamed")).unwrap();
+        assert_eq!(updated.id, first.id);
+        assert_eq!(db.list_songs().unwrap().len(), 1);
+        assert_eq!(db.list_songs().unwrap()[0].title, "Renamed");
+    }
+}
