@@ -110,3 +110,26 @@ test("desktop Busk keeps transport and per-track mixer controls", () => {
   assert.match(js, /set_track_solo/);
   assert.match(js, /clip\.color/);
 });
+
+
+test("extended Busk buttons are wired", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "app", "index.html"), "utf8");
+  const js = fs.readFileSync(path.join(__dirname, "..", "app", "app.js"), "utf8");
+
+  for (const id of [
+    "desktopPrevScene","desktopNextScene","desktopTapTempo","desktopCaptureMidi",
+    "desktopSessionRecord","desktopUndo","desktopRedo","desktopClearClip",
+    "desktopDuplicateClip","desktopDoubleClip","desktopSwing"
+  ]) {
+    assert.match(html, new RegExp('id="' + id + '"'));
+    assert.match(js, new RegExp(id));
+  }
+
+  for (const command of [
+    "prev_scene","next_scene","tap_tempo","capture_midi","session_record",
+    "undo","redo","clear_selected_clip","duplicate_selected_clip",
+    "double_selected_clip","set_swing"
+  ]) {
+    assert.match(js, new RegExp(command));
+  }
+});
