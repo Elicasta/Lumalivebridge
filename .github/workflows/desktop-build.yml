@@ -80,7 +80,7 @@ jobs:
           set -euo pipefail
           APP="src-tauri/target/release/bundle/macos/Luma Live.app"
           DMG_DIR="src-tauri/target/release/bundle/dmg"
-          DMG="$DMG_DIR/Luma-Live-0.4.0-aarch64.dmg"
+          DMG="$DMG_DIR/Luma-Live-0.4.1-aarch64.dmg"
           STAGE="$(mktemp -d)"
 
           mkdir -p "$DMG_DIR"
