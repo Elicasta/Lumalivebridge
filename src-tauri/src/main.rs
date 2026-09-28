@@ -353,6 +353,28 @@ async fn build_service(
                 .await?;
             }
 
+            for cue in &result.cues {
+                let track = if cue.kind.to_lowercase().contains("light") {
+                    "LIGHTING"
+                } else {
+                    "MIDI / CUES"
+                };
+                let file_name = std::path::Path::new(&cue.collected_path)
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("cue");
+                bridge::send(
+                    "create_arrangement_midi_clip",
+                    json!({
+                        "track": { "name": track },
+                        "position": cue.beat,
+                        "lengthBeats": 0.25,
+                        "name": format!("LL|CUE|{}|{}", cue.kind.to_uppercase(), file_name)
+                    }),
+                )
+                .await?;
+            }
+
             if let Some(first) = arrangement.songs.first() {
                 bridge::send("set_tempo", json!({ "bpm": first.bpm })).await?;
                 bridge::send(
