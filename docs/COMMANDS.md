@@ -1,80 +1,82 @@
-# Luma Live command language
+# Luma Live plain-language commands
 
-v0.1 deliberately prefers explicit commands over creative guessing.
+The plain-language bar belongs to Luma Live.app. Commands are parsed into an explicit allowlisted action set; arbitrary shell commands, arbitrary JavaScript, and arbitrary LiveAPI paths are not accepted.
 
-## Natural-language examples
+## Live commands
+
+Examples:
 
 ```text
+play
+stop
+next section
+previous section
+next song
+previous song
+go to bridge
 set tempo to 72
-set time signature to 6/8
-create audio track called Pad
-create midi track called MainStage
-rename track Click 2 to Click
-create scene Chorus
-rename scene 4 to Altar
-launch scene Chorus
-stop all
-mute track BGV
-unmute track BGV
-solo track Click
-set track Pad volume to 45%
+set meter to 6/8
+click on
+click off
+mute BGV
+unmute BGV
+solo Keys
+set Guide volume to 35%
+panic
 ```
 
-## Song builder
+## Setlist commands
 
 ```text
-Create a song called Gratitude at 68 BPM with Intro, Verse, Chorus, Bridge, Build and Altar
+load Sunday AM
+sync Sunday AM
+add Gratitude to Sunday AM
+add Gratitude to Sunday AM after Hineh Ma Tov
 ```
 
-This becomes one tempo change plus one appended scene for each section.
+## Song editing
 
-## Church-session builder
+When a synced song is current:
 
 ```text
-Create a church session at 72 BPM
+make Bridge start at bar 65
 ```
 
-This creates the standard tracks:
-
-1. GUIDE
-2. CLICK
-3. PAD
-4. LOOPS
-5. DRUMS
-6. BASS
-7. KEYS
-8. GUITARS
-9. BGV
-10. TRACKS
-11. MAINSTAGE
-12. PROPRESENTER
-13. LUMARIG
-
-## Structured API
-
-A trusted local client can call `POST /api/direct` with:
-
-```json
-{
-  "command": {
-    "type": "set_tempo",
-    "args": {
-      "bpm": 72
-    }
-  }
-}
-```
-
-Every direct command still passes through `validator.js`.
-
-There is no command for shell execution, arbitrary JavaScript, arbitrary Max messages, arbitrary LiveAPI paths, or file-system operations.
-
-## Human numbering
-
-When text uses numeric references, Luma treats them as one-based:
+## Song creation
 
 ```text
-launch scene 3
+create a song called Gratitude at 68 bpm in 4/4 with Intro 8 bars, Verse 8 bars, Chorus 8 bars, Bridge x2 8 bars, Vamp 8 bars
 ```
 
-maps to Live scene index `2`.
+Repeated section syntax such as `Bridge x2` expands into reusable section entries. When no section length is supplied, the local builder currently assumes eight bars.
+
+## Church session setup
+
+```text
+create a church session at 72 bpm
+```
+
+The current standard Ableton track layout is:
+
+1. CLICK
+2. GUIDE
+3. LOOPS
+4. DRUMS
+5. BASS
+6. KEYS
+7. GUITARS
+8. BGV
+9. TRACKS
+10. MAINSTAGE
+11. PROPRESENTER
+12. LUMARIG
+
+## API path
+
+The iPad remote sends plain-language text to:
+
+```text
+POST /api/command
+```
+
+Luma Live.app performs the parsing and database operations. Ableton-specific actions are forwarded privately to `127.0.0.1:17878`.
