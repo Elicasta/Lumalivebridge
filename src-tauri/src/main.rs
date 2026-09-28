@@ -204,14 +204,14 @@ async fn sync_live_setlist(state: State<'_, AppState>, id: String) -> Result<Val
     state.db.set_active_setlist_id(Some(&setlist.id))?;
     let timeline = json!({
         "songs": arrangement.songs.iter().map(|song| json!({
-            "instanceId": song.instance_id,
+            "instanceId": &song.instance_id,
             "startBeat": song.start_beat,
             "endBeat": song.end_beat,
             "bpm": song.bpm,
             "numerator": song.meter.numerator,
             "denominator": song.meter.denominator
         })).collect::<Vec<_>>(),
-        "transitions": arrangement.transitions
+        "transitions": &arrangement.transitions
     });
     let sync_result = async {
         bridge::send("sync_cue_points", json!({ "replace": true, "points": points })).await?;
@@ -358,14 +358,14 @@ async fn build_service(
 
             let timeline = json!({
                 "songs": arrangement.songs.iter().map(|song| json!({
-                    "instanceId": song.instance_id,
+                    "instanceId": &song.instance_id,
                     "startBeat": song.start_beat,
                     "endBeat": song.end_beat,
                     "bpm": song.bpm,
                     "numerator": song.meter.numerator,
                     "denominator": song.meter.denominator
                 })).collect::<Vec<_>>(),
-                "transitions": arrangement.transitions
+                "transitions": &arrangement.transitions
             });
             bridge::send("configure_service_timeline", timeline).await?;
 
