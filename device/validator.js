@@ -244,6 +244,8 @@ function validateCommand(input, options = {}) {
       break;
     }
 
+    case "begin_bulk_update":
+    case "end_bulk_update":
     case "clear_luma_arrangement":
       normalized = {};
       break;
