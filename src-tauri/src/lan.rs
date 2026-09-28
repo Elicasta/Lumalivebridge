@@ -117,7 +117,7 @@ async fn current_context(state: &AppState, arrangement: Option<&Arrangement>) ->
     locate_position(arrangement, beat)
 }
 
-async fn live_payload(state: &AppState) -> Result<Value, String> {
+pub(crate) async fn live_payload(state: &AppState) -> Result<Value, String> {
     let library = state.db.library()?;
     let arrangement = arrangement_from_library(&library)?;
     let bridge_state = state.bridge.state().await;
@@ -211,7 +211,7 @@ async fn delete_setlist(
     Ok(Json(json!({ "ok": true })))
 }
 
-async fn load_setlist_impl(state: &AppState, id: &str) -> Result<Value, String> {
+pub(crate) async fn load_setlist_impl(state: &AppState, id: &str) -> Result<Value, String> {
     let library = state.db.library()?;
     let setlist = library
         .setlists
@@ -275,7 +275,7 @@ struct DirectBody {
     command: Value,
 }
 
-fn allowed_remote_command(command: &Value) -> bool {
+pub(crate) fn allowed_remote_command(command: &Value) -> bool {
     let Some(kind) = command.get("type").and_then(Value::as_str) else {
         return false;
     };
@@ -294,24 +294,24 @@ fn allowed_remote_command(command: &Value) -> bool {
     )
 }
 
+pub(crate) async fn direct_impl(state: &AppState, command: Value) -> Result<Value, String> {
+    if !allowed_remote_command(&command) {
+        return Err("Command is not allowed from the live controls".into());
+    }
+    state.bridge.direct(command).await?;
+    live_payload(state).await
+}
+
 async fn live_direct(
     AxumState(state): AxumState<AppState>,
     headers: HeaderMap,
     Json(body): Json<DirectBody>,
 ) -> Result<Json<Value>, ApiError> {
     authorize(&headers, &state)?;
-    if !allowed_remote_command(&body.command) {
-        return Err(api_error(StatusCode::BAD_REQUEST, "Command is not allowed from the remote"));
-    }
-    state
-        .bridge
-        .direct(body.command)
-        .await
-        .map_err(|error| api_error(StatusCode::SERVICE_UNAVAILABLE, error))?;
-    live_payload(&state)
+    direct_impl(&state, body.command)
         .await
         .map(Json)
-        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))
+        .map_err(|error| api_error(StatusCode::SERVICE_UNAVAILABLE, error))
 }
 
 #[derive(Deserialize)]
@@ -355,6 +355,15 @@ async fn jump_impl(state: &AppState, body: &JumpBody) -> Result<Value, String> {
     live_payload(state).await
 }
 
+pub(crate) async fn jump_by_ids(
+    state: &AppState,
+    song_id: Option<String>,
+    instance_id: Option<String>,
+    section_id: Option<String>,
+) -> Result<Value, String> {
+    jump_impl(state, &JumpBody { song_id, instance_id, section_id }).await
+}
+
 async fn live_jump(
     AxumState(state): AxumState<AppState>,
     headers: HeaderMap,
@@ -372,17 +381,21 @@ struct PlainTextBody {
     text: String,
 }
 
+pub(crate) async fn build_plain_plan(state: &AppState, text: &str) -> Result<PlainPlan, String> {
+    let library = state.db.library()?;
+    let arrangement = arrangement_from_library(&library)?;
+    let context = current_context(state, arrangement.as_ref()).await;
+    plan_plain_text(text, &library, context.as_ref())
+}
+
 async fn plain_plan(
     AxumState(state): AxumState<AppState>,
     headers: HeaderMap,
     Json(body): Json<PlainTextBody>,
 ) -> Result<Json<Value>, ApiError> {
     authorize(&headers, &state)?;
-    let library = library_or_error(&state)?;
-    let arrangement = arrangement_from_library(&library)
-        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))?;
-    let context = current_context(&state, arrangement.as_ref()).await;
-    let plan = plan_plain_text(&body.text, &library, context.as_ref())
+    let plan = build_plain_plan(&state, &body.text)
+        .await
         .map_err(|error| api_error(StatusCode::BAD_REQUEST, error))?;
     Ok(Json(json!({ "ok": true, "plan": plan })))
 }
@@ -408,7 +421,7 @@ fn song_input_from_song(song: &Song) -> SongInput {
     }
 }
 
-async fn apply_plain_plan(state: &AppState, plan: &PlainPlan) -> Result<Value, String> {
+pub(crate) async fn apply_plain_plan(state: &AppState, plan: &PlainPlan) -> Result<Value, String> {
     let mut results = Vec::new();
 
     for step in &plan.steps {
