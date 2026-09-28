@@ -6,6 +6,8 @@ var serviceTimelineTask = null;
 var serviceTimelineSongIndex = -1;
 var serviceTimelineVampIndex = -1;
 var serviceTimelineHolds = {};
+var queuedJumpTask = null;
+var queuedJump = null;
 
 function asScalar(value, property) {
   if (value instanceof Array) {
@@ -233,6 +235,67 @@ function snapshot() {
     scenes: sceneState(),
     tracks: tracks
   };
+}
+
+function cancelQueuedJump() {
+  if (queuedJumpTask) {
+    try { queuedJumpTask.cancel(); } catch (_) {}
+    queuedJumpTask = null;
+  }
+  queuedJump = null;
+}
+
+function runQueuedJump() {
+  if (!queuedJump) return;
+  try {
+    var set = live("live_set");
+    var playing = Number(getProp(set, "is_playing")) === 1;
+    if (!playing) {
+      var stoppedTarget = queuedJump.target;
+      cancelQueuedJump();
+      releaseServiceLoop();
+      set.set("current_song_time", stoppedTarget);
+      pushState();
+      return;
+    }
+
+    var now = Number(getProp(set, "current_song_time"));
+    if (now + 0.012 >= queuedJump.boundary) {
+      var target = queuedJump.target;
+      cancelQueuedJump();
+      releaseServiceLoop();
+      set.set("current_song_time", target);
+      pushState();
+    }
+  } catch (_) {
+    cancelQueuedJump();
+  }
+}
+
+function queueJumpToTime(args) {
+  var set = live("live_set");
+  var target = Number(args.time);
+  var origin = Number(args.origin);
+  var bar = Number(args.beatsPerBar);
+
+  if (Number(getProp(set, "is_playing")) !== 1) {
+    releaseServiceLoop();
+    set.set("current_song_time", target);
+    pushState();
+    return { queued: false, time: target };
+  }
+
+  var now = Number(getProp(set, "current_song_time"));
+  var relative = Math.max(0, now - origin);
+  var nextBar = Math.floor((relative + 0.0001) / bar) + 1;
+  var boundary = origin + nextBar * bar;
+
+  cancelQueuedJump();
+  queuedJump = { target: target, boundary: boundary };
+  queuedJumpTask = new Task(runQueuedJump, this);
+  queuedJumpTask.interval = 10;
+  queuedJumpTask.repeat();
+  return { queued: true, time: target, boundary: boundary };
 }
 
 function stopServiceTimelineTask() {
@@ -503,9 +566,14 @@ function execute(command) {
   }
 
   if (type === "jump_to_time") {
+    cancelQueuedJump();
     releaseServiceLoop();
     set.set("current_song_time", Number(args.time));
     return { time: Number(args.time) };
+  }
+
+  if (type === "queue_jump_to_time") {
+    return queueJumpToTime(args);
   }
 
   if (type === "ensure_track") {
