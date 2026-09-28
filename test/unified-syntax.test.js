@@ -45,3 +45,16 @@ test("restored Perform and Busk remote surface is present", () => {
   assert.match(remoteJs, /stop_track/);
   assert.match(remoteJs, /\/api\/jump/);
 });
+
+
+test("iPad Perform can load a service directly", () => {
+  const remoteHtml = fs.readFileSync(path.join(__dirname, "..", "remote", "index.html"), "utf8");
+  const remoteJs = fs.readFileSync(path.join(__dirname, "..", "remote", "app.js"), "utf8");
+  const remoteCss = fs.readFileSync(path.join(__dirname, "..", "remote", "styles.css"), "utf8");
+
+  assert.match(remoteHtml, /id="serviceSelect"/);
+  assert.match(remoteHtml, /id="serviceLoadBtn"/);
+  assert.match(remoteJs, /syncSetlist/);
+  assert.match(remoteJs, /performSceneSignature/);
+  assert.match(remoteCss, /overflow-anchor:none/);
+});
