@@ -38,6 +38,18 @@ pub struct SongPackageManifest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SongPackageStatus {
+    pub song_id: String,
+    pub package_path: String,
+    pub source_als: Option<String>,
+    pub project_attached: bool,
+    pub stem_count: usize,
+    pub cue_count: usize,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServiceAudioPlacement {
     pub song_id: String,
     pub instance_id: String,
@@ -193,25 +205,41 @@ fn role_from_filename(path: &Path) -> String {
     "extra1".into()
 }
 
-fn scan_audio(package_dir: &Path) -> Result<Vec<StemAsset>, String> {
-    let audio_dir = package_dir.join("Audio");
-    if !audio_dir.exists() {
-        return Ok(Vec::new());
+fn collect_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(());
     }
-
-    let mut files = Vec::new();
-    for entry in fs::read_dir(&audio_dir).map_err(|e| e.to_string())? {
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
-        if !path.is_file() {
-            continue;
+        if path.is_dir() {
+            collect_files_recursive(&path, out)?;
+        } else if path.is_file() {
+            out.push(path);
         }
-        let extension = path
-            .extension()
+    }
+    Ok(())
+}
+
+fn is_audio_file(path: &Path) -> bool {
+    matches!(
+        path.extension()
             .and_then(|value| value.to_str())
             .unwrap_or("")
-            .to_lowercase();
-        if !["wav", "aif", "aiff", "flac", "mp3", "m4a"].contains(&extension.as_str()) {
+            .to_lowercase()
+            .as_str(),
+        "wav" | "aif" | "aiff" | "flac" | "mp3" | "m4a"
+    )
+}
+
+fn scan_audio(package_dir: &Path) -> Result<Vec<StemAsset>, String> {
+    let audio_dir = package_dir.join("Audio");
+    let mut candidates = Vec::new();
+    collect_files_recursive(&audio_dir, &mut candidates)?;
+
+    let mut files = Vec::new();
+    for path in candidates {
+        if !is_audio_file(&path) {
             continue;
         }
         let role = role_from_filename(&path);
@@ -287,24 +315,26 @@ fn scan_cues(package_dir: &Path) -> Result<Vec<CueAsset>, String> {
 
 fn detect_source_als(package_dir: &Path) -> Result<Option<String>, String> {
     let mut candidates = Vec::new();
-    for entry in fs::read_dir(package_dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        if path.is_file()
-            && path
-                .extension()
-                .and_then(|value| value.to_str())
-                .map(|value| value.eq_ignore_ascii_case("als"))
-                .unwrap_or(false)
-        {
-            candidates.push(path);
-        }
-    }
-    candidates.sort();
-    Ok(candidates.first().map(|path| {
-        path.file_name()
+    collect_files_recursive(package_dir, &mut candidates)?;
+    candidates.retain(|path| {
+        path.extension()
             .and_then(|value| value.to_str())
-            .unwrap_or_default()
+            .map(|value| value.eq_ignore_ascii_case("als"))
+            .unwrap_or(false)
+            && !path
+                .components()
+                .any(|part| part.as_os_str().to_string_lossy().eq_ignore_ascii_case("Backup"))
+    });
+    candidates.sort_by_key(|path| {
+        let preferred = path
+            .components()
+            .any(|part| part.as_os_str().to_string_lossy().eq_ignore_ascii_case("Project"));
+        (!preferred, path.to_string_lossy().to_string())
+    });
+    Ok(candidates.first().map(|path| {
+        path.strip_prefix(package_dir)
+            .unwrap_or(path)
+            .to_string_lossy()
             .to_string()
     }))
 }
@@ -312,7 +342,8 @@ fn detect_source_als(package_dir: &Path) -> Result<Option<String>, String> {
 pub fn ensure_song_package(root: &Path, song: &Song) -> Result<PathBuf, String> {
     ensure_layout(root)?;
     let package = song_package_dir(root, song);
-    fs::create_dir_all(package.join("Audio")).map_err(|e| e.to_string())?;
+    fs::create_dir_all(package.join("Project")).map_err(|e| e.to_string())?;
+    fs::create_dir_all(package.join("Audio").join("Original")).map_err(|e| e.to_string())?;
     fs::create_dir_all(package.join("Cues")).map_err(|e| e.to_string())?;
     fs::create_dir_all(package.join("Exports")).map_err(|e| e.to_string())?;
 
@@ -344,15 +375,9 @@ pub fn ensure_song_package(root: &Path, song: &Song) -> Result<PathBuf, String> 
 
     manifest.song_id = song.id.clone();
     manifest.title = song.title.clone();
-    if manifest.source_als.is_none() {
-        manifest.source_als = detect_source_als(&package)?;
-    }
-    if manifest.stems.is_empty() {
-        manifest.stems = scan_audio(&package)?;
-    }
-    if manifest.cues.is_empty() {
-        manifest.cues = scan_cues(&package)?;
-    }
+    manifest.source_als = detect_source_als(&package)?;
+    manifest.stems = scan_audio(&package)?;
+    manifest.cues = scan_cues(&package)?;
 
     fs::write(
         &manifest_path,
@@ -365,7 +390,7 @@ pub fn ensure_song_package(root: &Path, song: &Song) -> Result<PathBuf, String> 
         fs::write(
             info_path,
             format!(
-                "{}\n\nPut the song's authoring Ableton Set in this folder.\nPut stems in Audio/. Luma auto-detects common names such as Click, Guide, Drums, Bass, Keys, Guitar, and BGV.\nPut song-specific lighting, ProPresenter, MainStage, or MIDI cue files in Cues/.\n\nThe song.json file is Luma Live's portable song manifest.\n",
+                "{}\n\nPut the song's Ableton Project folder inside Project/. Keep the normal Ableton Project Info/Backup folders intact.\nPut original stems in Audio/Original/. Luma scans recursively and auto-detects common names such as Click, Guide, Drums, Bass, Keys, Guitar, and BGV.\nPut song-specific lighting, ProPresenter, MainStage, or MIDI cue files in Cues/.\n\nThe song.json file is Luma Live's portable song manifest.\n",
                 song.title
             ),
         )
@@ -373,6 +398,72 @@ pub fn ensure_song_package(root: &Path, song: &Song) -> Result<PathBuf, String> 
     }
 
     Ok(package)
+}
+
+pub fn package_status(root: &Path, song: &Song) -> Result<SongPackageStatus, String> {
+    let package = ensure_song_package(root, song)?;
+    let manifest = load_manifest(&package, song)?;
+    let mut warnings = Vec::new();
+    if manifest.source_als.is_none() {
+        warnings.push("No Ableton .als is attached yet".into());
+    }
+    if manifest.stems.is_empty() {
+        warnings.push("No original stems detected yet".into());
+    }
+
+    Ok(SongPackageStatus {
+        song_id: song.id.clone(),
+        package_path: package.to_string_lossy().to_string(),
+        source_als: manifest.source_als.clone(),
+        project_attached: package.join("Project").read_dir().map(|mut it| it.next().is_some()).unwrap_or(false),
+        stem_count: manifest.stems.len(),
+        cue_count: manifest.cues.len(),
+        warnings,
+    })
+}
+
+pub fn adopt_project(root: &Path, song: &Song, source: &Path) -> Result<SongPackageStatus, String> {
+    if !source.is_dir() {
+        return Err("Choose the Ableton Project folder, not a file".into());
+    }
+    let package = ensure_song_package(root, song)?;
+    let project_root = package.join("Project");
+    if project_root.exists() {
+        fs::remove_dir_all(&project_root).map_err(|e| e.to_string())?;
+    }
+    fs::create_dir_all(&project_root).map_err(|e| e.to_string())?;
+    let name = source
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Ableton Project");
+    let destination = project_root.join(name);
+    copy_tree(source, &destination)?;
+    ensure_song_package(root, song)?;
+    package_status(root, song)
+}
+
+pub fn import_stems(root: &Path, song: &Song, sources: &[PathBuf]) -> Result<SongPackageStatus, String> {
+    let package = ensure_song_package(root, song)?;
+    let destination = package.join("Audio").join("Original");
+    fs::create_dir_all(&destination).map_err(|e| e.to_string())?;
+
+    let mut imported = 0usize;
+    for source in sources {
+        if !source.is_file() || !is_audio_file(source) {
+            continue;
+        }
+        let file_name = source
+            .file_name()
+            .ok_or_else(|| "Stem file is missing a file name".to_string())?;
+        fs::copy(source, destination.join(file_name)).map_err(|e| e.to_string())?;
+        imported += 1;
+    }
+    if imported == 0 {
+        return Err("No supported audio files were selected".into());
+    }
+
+    ensure_song_package(root, song)?;
+    package_status(root, song)
 }
 
 fn copy_tree(source: &Path, destination: &Path) -> Result<(), String> {
