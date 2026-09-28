@@ -243,10 +243,18 @@
             <div class="detail"><span>Database</span><code id="databasePath">Loading…</code></div>
           </article>
 
+          <article class="panel pairing-settings">
+            <span class="eyebrow">IPAD PAIRING</span>
+            <h3>6-Digit Connection Code</h3>
+            <p class="muted">Open the Luma Live address on the iPad, then enter this code. The code is never used as the permanent device credential.</p>
+            <div class="desktop-pairing-code" id="desktopPairingCode">------</div>
+            <button id="newPairingCode" class="quiet">New Code</button>
+          </article>
+
           <article class="panel">
             <span class="eyebrow">IPAD REMOTE</span>
             <h3>Local Network</h3>
-            <p class="muted">The Mac app owns the remote server on port 7878. Open the full tokenized link on the iPad.</p>
+            <p class="muted">Open this address on the iPad. No tokenized URL is needed after v0.4.2.</p>
             <div id="remoteLinks" class="remote-links"></div>
           </article>
 
