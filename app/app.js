@@ -821,7 +821,8 @@
       button.innerHTML =
         '<span>' + String(index + 1).padStart(2, "0") + '</span>' +
         '<span><b>' + escapeHtml(song.title) + '</b><small>' +
-        escapeHtml(song.bpm + " BPM" + (song.key ? " · " + song.key : "")) +
+        escapeHtml(song.bpm + " BPM" + (song.key ? " · " + transposeKey(song.key, song.transposeSemitones || 0) : "") +
+          (song.transposeSemitones ? " · " + (song.transposeSemitones > 0 ? "+" : "") + song.transposeSemitones + " st" : "")) +
         '</small></span><em>' + (ctx && ctx.instanceId === song.instanceId ? "NOW" : "GO") + '</em>';
       button.addEventListener("click", () => jumpTo(song, null));
       $("desktopServiceOrder").appendChild(button);
@@ -851,7 +852,8 @@
       $("desktopCurrentSong").textContent = ctx.songTitle;
       $("desktopCurrentMeta").textContent = [
         ctx.bpm + " BPM",
-        ctx.key || null,
+        ctx.key ? transposeKey(ctx.key, ctx.transposeSemitones || 0) : null,
+        ctx.transposeSemitones ? ((ctx.transposeSemitones > 0 ? "+" : "") + ctx.transposeSemitones + " st") : null,
         ctx.meter ? ctx.meter.numerator + "/" + ctx.meter.denominator : null,
         state.arrangement ? "Song " + (ctx.songIndex + 1) + " of " + state.arrangement.songs.length : null
       ].filter(Boolean).join(" · ");
