@@ -215,6 +215,12 @@ async fn jump_live(
 }
 
 #[tauri::command]
+async fn preview_plain_command(state: State<'_, AppState>, text: String) -> Result<Value, String> {
+    let state = state.inner().clone();
+    command::preview(&state, &text).await
+}
+
+#[tauri::command]
 async fn run_plain_command(state: State<'_, AppState>, text: String) -> Result<Value, String> {
     let state = state.inner().clone();
     let result = command::execute(&state, &text).await?;
@@ -321,6 +327,7 @@ fn main() {
             direct_live_command,
             sync_live_setlist,
             jump_live,
+            preview_plain_command,
             run_plain_command
         ])
         .run(context);
