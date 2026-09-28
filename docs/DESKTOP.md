@@ -1,108 +1,87 @@
-# Luma Live Desktop
+# Luma Live Desktop v0.4
 
-Luma Live v0.3 moves the permanent library and local-network host out of the Max for Live device and into a real macOS application.
+Luma Live.app is the single public application and LAN host.
+
+## Runtime shape
+
+```text
+iPad / browser
+      |
+      v
+Luma Live.app :7878
+      |
+      | localhost only
+      v
+127.0.0.1:17878
+      |
+Luma Live.amxd
+      |
+Ableton LiveAPI
+```
+
+The iPad never talks directly to Max.
 
 ## Offline-first behavior
 
-The desktop app does not require internet access for:
+Internet is not required for:
 
 - opening Luma Live
-- reading or editing the song library
-- reading or editing saved setlists
-- running the built-in LAN remote server
-- serving the iPad/iPhone remote over the local network
+- song/library editing
+- setlist building
+- Arrangement mapping
+- the same-network remote
+- live control between the Mac and Ableton
 
-The local database is SQLite and is stored inside the normal macOS application data directory:
+SQLite lives in the normal macOS application data directory. The resolved path is shown under **Settings → Local Database**.
 
-```text
-~/Library/Application Support/com.eccreative.lumalive/luma-live.db
-```
+## Network roles
 
-The exact resolved path is shown in **Settings → Local Database**.
+Luma Live.app binds publicly to port `7878`.
 
-## Same-network remote
-
-When Luma Live opens it starts a local HTTP server.
-
-The preferred port is `7878`. If that port is already occupied, Luma Live automatically tries the next available port through `7897`.
-
-That is intentional during the bridge migration because the older Max/Node bridge may already be using port 7878.
-
-The desktop app displays the actual remote address, for example:
+The Max adapter binds only to:
 
 ```text
-http://192.168.1.42:7879/
+127.0.0.1:17878
 ```
 
-The full copyable link also contains a persistent local token. Open that full link on an iPad or iPhone connected to the same LAN.
+The remote uses a persistent local token stored beside the desktop application data.
 
-The remote UI is bundled into the Mac application. It does not fetch its interface from the internet.
+## Desktop pages
 
-## Local authentication
+- **Song Control**: Arrangement navigation, track mixer, transport, plain-language commands
+- **Busk**: Session View scenes and Stop All
+- **Library**: reusable songs and sections
+- **Setlists**: service order and Ableton sync
+- **Settings**: local database, remote URL, adapter status
 
-A random remote token is created on first launch and stored beside the SQLite database:
+## Legacy migration
+
+If SQLite is empty on first launch, v0.4 looks for older Luma libraries under:
 
 ```text
-remote-token
+~/Library/Application Support/LumaLiveBridge/library/
+~/Library/Application Support/LumaLiveBridge/library.json
 ```
 
-The token is included in the full remote URL shown by the Mac app and is required for local API requests.
+Existing SQLite data is never replaced by the migration.
 
 ## Development
 
-Install the Tauri CLI dependency:
-
 ```bash
 npm install
-```
-
-Run the desktop app:
-
-```bash
 npm run desktop:dev
+npm test
+cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
-Build the macOS app and DMG:
+Production development build:
 
 ```bash
 npm run desktop:build
 ```
 
-Tauri source lives in:
+The GitHub macOS build also performs a launch smoke test before creating the DMG.
 
-```text
-src-tauri/
-```
+## Current runtime boundary
 
-The desktop webview is:
-
-```text
-app/
-```
-
-The same-network remote is:
-
-```text
-remote/
-```
-
-## Current bridge boundary
-
-The original Max for Live bridge remains in `device/`.
-
-v0.3 deliberately establishes the permanent application boundary first:
-
-```text
-Luma Live.app
-  ├─ SQLite library
-  ├─ local song/setlist management
-  ├─ LAN server
-  └─ remote UI
-
-Ableton
-  └─ existing Luma Live Bridge Max device
-```
-
-The next bridge step is to make the Tauri app the only LAN-facing server and move Ableton communication to a private localhost connection between Luma Live.app and the Max device.
-
-At that point the iPad will never talk directly to Max. It will talk only to Luma Live.app.
+The unified code compiles in CI, but actual Ableton LiveAPI behavior must still be validated on a real Live set before release claims are made.
