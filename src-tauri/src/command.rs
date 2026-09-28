@@ -147,14 +147,14 @@ async fn sync_setlist(state: &AppState, setlist_id: &str) -> Result<Value, Strin
 
     let timeline = json!({
         "songs": arrangement.songs.iter().map(|song| json!({
-            "instanceId": song.instance_id,
+            "instanceId": &song.instance_id,
             "startBeat": song.start_beat,
             "endBeat": song.end_beat,
             "bpm": song.bpm,
             "numerator": song.meter.numerator,
             "denominator": song.meter.denominator
         })).collect::<Vec<_>>(),
-        "transitions": arrangement.transitions
+        "transitions": &arrangement.transitions
     });
     let sync_result = async {
         bridge::send(
