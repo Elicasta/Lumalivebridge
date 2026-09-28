@@ -31,3 +31,17 @@ test("six-digit pairing surface is present", () => {
   assert.match(remoteJs, /\/api\/pair/);
   assert.match(lanRs, /route\("\/api\/pair", post\(pair\)\)/);
 });
+
+
+test("restored Perform and Busk remote surface is present", () => {
+  const remoteHtml = fs.readFileSync(path.join(__dirname, "..", "remote", "index.html"), "utf8");
+  const remoteJs = fs.readFileSync(path.join(__dirname, "..", "remote", "app.js"), "utf8");
+
+  assert.match(remoteHtml, /data-tab="perform"/);
+  assert.match(remoteHtml, /data-tab="busk"/);
+  assert.match(remoteHtml, /id="buskGrid"/);
+  assert.match(remoteHtml, /id="sectionGrid"/);
+  assert.match(remoteJs, /fire_clip/);
+  assert.match(remoteJs, /stop_track/);
+  assert.match(remoteJs, /\/api\/jump/);
+});
