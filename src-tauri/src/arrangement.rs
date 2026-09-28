@@ -87,7 +87,8 @@ pub fn build_arrangement(setlist: &Setlist, songs: &[Song]) -> Result<Arrangemen
         let song = map
             .get(item.song_id.as_str())
             .ok_or_else(|| format!("Song {} is missing from the library", item.song_id))?;
-        let beats_per_bar = song.meter.numerator.max(1) as f64;
+        let denominator = song.meter.denominator.max(1) as f64;
+        let beats_per_bar = song.meter.numerator.max(1) as f64 * 4.0 / denominator;
         let start_beat = cursor;
         let end_beat = start_beat + song.length_bars.max(1) as f64 * beats_per_bar;
 
@@ -182,10 +183,13 @@ pub fn locate_position(arrangement: &Arrangement, beat: f64) -> Option<LiveConte
         }
     }
 
-    let beats_per_bar = song.meter.numerator.max(1) as f64;
+    let denominator = song.meter.denominator.max(1) as f64;
+    let beats_per_bar = song.meter.numerator.max(1) as f64 * 4.0 / denominator;
     let local_beat = (beat - song.start_beat).max(0.0);
     let current_bar = (local_beat / beats_per_bar).floor() as i64 + 1;
-    let beat_in_bar = (local_beat % beats_per_bar).floor() as i64 + 1;
+    let denominator_units_per_quarter = denominator / 4.0;
+    let beat_in_bar =
+        ((local_beat % beats_per_bar) * denominator_units_per_quarter).floor() as i64 + 1;
     let duration = (song.end_beat - song.start_beat).max(1.0);
     let progress = ((beat - song.start_beat) / duration).clamp(0.0, 1.0);
 
