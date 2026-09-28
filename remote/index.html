@@ -106,7 +106,19 @@
         </div>
         <div class="command-row">
           <input id="commandInput" autocomplete="off" placeholder="Next section, mute BGV, load Sunday AM, set tempo to 72…">
-          <button id="commandBtn" class="primary">Run</button>
+          <button id="commandPreviewBtn" class="primary">Preview</button>
+          <button id="commandBtn">Run Now</button>
+        </div>
+        <div id="commandPreviewPanel" class="command-preview" hidden>
+          <div>
+            <span class="eyebrow">PREVIEW</span>
+            <strong id="commandPreviewSummary">—</strong>
+            <small id="commandPreviewMeta"></small>
+          </div>
+          <div class="command-preview-actions">
+            <button id="commandCancelBtn">Cancel</button>
+            <button id="commandApplyBtn" class="primary">Apply</button>
+          </div>
         </div>
         <div class="command-examples">
           <button data-command="next section">Next section</button>
