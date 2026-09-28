@@ -430,6 +430,20 @@ function execute(command) {
     return { trackIndex: arrangementTrack, position: Number(args.position) };
   }
 
+  if (type === "create_arrangement_midi_clip") {
+    var midiArrangementTrack = targetIndex("tracks", args.track);
+    var midiTrackApi = live("live_set tracks " + midiArrangementTrack);
+    midiTrackApi.call("create_midi_clip", Number(args.position), Number(args.lengthBeats));
+    var createdMidiClip = arrangementClipAt(midiArrangementTrack, args.position);
+    if (!createdMidiClip) throw new Error("Ableton did not create the Arrangement MIDI clip");
+    createdMidiClip.set("name", String(args.name));
+    return {
+      trackIndex: midiArrangementTrack,
+      position: Number(args.position),
+      lengthBeats: Number(args.lengthBeats)
+    };
+  }
+
   if (type === "set_arrangement_loop") {
     set.set("loop_start", Number(args.start));
     set.set("loop_length", Number(args.length));
