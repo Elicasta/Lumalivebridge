@@ -868,6 +868,7 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
                 id: None,
                 song_id: song.id.clone(),
                 transition: Default::default(),
+                transpose_semitones: 0,
             });
         }
 
@@ -917,6 +918,7 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
                         id: Some(item.id.clone()),
                         song_id: item.song_id.clone(),
                         transition: item.transition.clone(),
+                        transpose_semitones: item.transpose_semitones,
                     })
                 }
             })
@@ -987,17 +989,19 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
             .items
             .iter()
             .map(|item| SetlistItemInput {
-                id: Some(item.id.clone()),
-                song_id: item.song_id.clone(),
-                transition: item.transition.clone(),
-            })
+                        id: Some(item.id.clone()),
+                        song_id: item.song_id.clone(),
+                        transition: item.transition.clone(),
+                        transpose_semitones: item.transpose_semitones,
+                    })
             .collect();
 
         let new_item = SetlistItemInput {
-            id: None,
-            song_id: song.id.clone(),
-            transition: Default::default(),
-        };
+                id: None,
+                song_id: song.id.clone(),
+                transition: Default::default(),
+                transpose_semitones: 0,
+            };
 
         if let Some(after_name) = after_name {
             let songs = state.db.list_songs()?;
@@ -1153,7 +1157,7 @@ mod tests {
                 id: None,
                 title: "Sunday AM".into(),
                 gap_bars: 4,
-                items: vec![SetlistItemInput { id: None, song_id: song.id, transition: Default::default() }],
+                items: vec![SetlistItemInput { id: None, song_id: song.id, transition: Default::default(), transpose_semitones: 0 }],
             })
             .unwrap();
 
