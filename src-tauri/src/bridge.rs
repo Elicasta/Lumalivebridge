@@ -86,18 +86,33 @@ pub async fn jump_to_time(target: f64) -> Result<Value, String> {
 
     send("jump_to_time", json!({ "time": target })).await?;
 
-    for _ in 0..8 {
-        tokio::time::sleep(Duration::from_millis(35)).await;
+    let mut last_position: Option<f64> = None;
+    // LiveAPI position updates can lag slightly while Ableton is rebuilding clips or
+    // refreshing a larger service. Give the adapter a full second before declaring
+    // a real navigation failure instead of producing a false negative after ~280 ms.
+    for _ in 0..20 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
         let current = state().await?;
-        let reached = current
-            .get("currentSongTime")
-            .and_then(Value::as_f64)
-            .map(|value| (value - target).abs() <= 0.03)
+        last_position = current.get("currentSongTime").and_then(Value::as_f64);
+        let reached = last_position
+            .map(|value| (value - target).abs() <= 0.05)
             .unwrap_or(false);
         if reached {
             return Ok(current);
         }
     }
 
-    Err(format!("Ableton did not reach the requested section position ({target:.3})"))
+    let health = health_info().await.ok();
+    let version = health
+        .as_ref()
+        .and_then(|value| value.get("version"))
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let reported = last_position
+        .map(|value| format!("{value:.3}"))
+        .unwrap_or_else(|| "no position".into());
+
+    Err(format!(
+        "Ableton did not reach beat {target:.3}. Adapter v{version} reported {reported} after 1s. If the playhead did not move, reload the current Luma Live5 Max adapter; if it moved but this still appears, run Settings → Run Full Check."
+    ))
 }
