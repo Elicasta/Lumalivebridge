@@ -262,8 +262,43 @@ async fn jump_live(
         }),
     )
     .await?;
-    bridge::jump_to_time(time).await?;
-    enriched_live_state(&state).await
+
+    let queued = section_id.is_some();
+    let mut boundary: Option<f64> = None;
+    if queued {
+        let beats_per_bar =
+            song.meter.numerator.max(1) as f64 * (4.0 / song.meter.denominator.max(1) as f64);
+        let response = bridge::send(
+            "queue_jump_to_time",
+            json!({
+                "time": time,
+                "origin": song.start_beat,
+                "beatsPerBar": beats_per_bar
+            }),
+        )
+        .await?;
+        boundary = response
+            .get("result")
+            .and_then(|value| value.get("boundary"))
+            .and_then(Value::as_f64);
+    } else {
+        bridge::jump_to_time(time).await?;
+    }
+
+    let mut live = enriched_live_state(&state).await?;
+    if queued {
+        if let Some(object) = live.as_object_mut() {
+            object.insert(
+                "queuedJump".into(),
+                json!({
+                    "sectionId": section_id,
+                    "targetBeat": time,
+                    "boundary": boundary
+                }),
+            );
+        }
+    }
+    Ok(live)
 }
 
 #[tauri::command]
