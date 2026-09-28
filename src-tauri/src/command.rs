@@ -512,7 +512,7 @@ pub async fn preview(state: &AppState, text: &str) -> Result<Value, String> {
 
     let load_re = Regex::new(r"(?i)^(?:load|sync)\s+(?:(?:setlist|service)\s+)?(.+?)(?:\s+(?:setlist|service))?$").unwrap();
     if let Some(caps) = load_re.captures(raw) {
-        let requested = normalized_target(&caps[1]);
+        let requested = normalized(&caps[1]);
         let setlist = state
             .db
             .list_setlists()?
@@ -915,7 +915,7 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
 
     let load_re = Regex::new(r"(?i)^(?:load|sync)\s+(?:(?:setlist|service)\s+)?(.+?)(?:\s+(?:setlist|service))?$").unwrap();
     if let Some(caps) = load_re.captures(raw) {
-        let requested = normalized_target(&caps[1]);
+        let requested = normalized(&caps[1]);
         let setlist = state
             .db
             .list_setlists()?
