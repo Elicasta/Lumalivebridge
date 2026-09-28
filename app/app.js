@@ -1309,7 +1309,7 @@
       const packages = result.packages || [];
       const ready = packages.filter((item) => item.sourceAls && item.stemCount > 0).length;
       const capabilities = Array.isArray(result.adapterCapabilities) ? result.adapterCapabilities : [];
-      const requiredBuildCapabilities = ["arrangement-audio", "transpose", "bulk-build"];
+      const requiredBuildCapabilities = ["arrangement-audio", "transpose", "bulk-build", "extended-busk"];
       const missingBuildCapabilities = requiredBuildCapabilities.filter((name) => !capabilities.includes(name));
       const buildReady = !!result.bridgeConnected && missingBuildCapabilities.length === 0;
       host.innerHTML =
