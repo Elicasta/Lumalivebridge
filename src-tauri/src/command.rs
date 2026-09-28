@@ -119,7 +119,7 @@ async fn jump(state: &AppState, arrangement: &Arrangement, instance_id: &str, se
         }),
     )
     .await?;
-    bridge::send("jump_to_time", json!({ "time": time })).await?;
+    bridge::jump_to_time(time).await?;
     Ok(json!({
         "summary": if let Some(section_id) = section_id {
             let section = song.sections.iter().find(|item| item.id == section_id);
@@ -145,10 +145,26 @@ async fn sync_setlist(state: &AppState, setlist_id: &str) -> Result<Value, Strin
 
     state.db.set_active_setlist_id(Some(&setlist.id))?;
 
-    let sync_result = bridge::send(
-        "sync_cue_points",
-        json!({ "replace": true, "points": points }),
-    )
+    let timeline = json!({
+        "songs": arrangement.songs.iter().map(|song| json!({
+            "instanceId": song.instance_id,
+            "startBeat": song.start_beat,
+            "endBeat": song.end_beat,
+            "bpm": song.bpm,
+            "numerator": song.meter.numerator,
+            "denominator": song.meter.denominator
+        })).collect::<Vec<_>>(),
+        "transitions": arrangement.transitions
+    });
+    let sync_result = async {
+        bridge::send(
+            "sync_cue_points",
+            json!({ "replace": true, "points": points }),
+        )
+        .await?;
+        bridge::send("configure_service_timeline", timeline).await?;
+        Ok::<(), String>(())
+    }
     .await;
 
     let (summary, bridge_connected, sync_error) = match sync_result {
