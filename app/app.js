@@ -223,6 +223,10 @@
       if (copyAsNew) payload.id = null;
       const song = await invoke("save_song", { song: payload });
       await loadLibrary();
+      try {
+        const status = await invoke("rescan_song_package", { id: song.id });
+        state.packageStatuses[song.id] = status;
+      } catch (_) {}
       editSong(song);
       recomputeArrangement();
       renderLive();
@@ -1027,17 +1031,20 @@
   }
 
   async function loadLibrary() {
-    const [payload, statuses] = await Promise.all([
-      invoke("get_library"),
-      invoke("get_song_package_statuses").catch(() => [])
-    ]);
+    const payload = await invoke("get_library");
     state.songs = payload.songs || [];
     state.setlists = payload.setlists || [];
-    state.packageStatuses = Object.fromEntries((statuses || []).map((status) => [status.songId, status]));
     renderSongs();
     renderSetlists();
     renderDraft();
     recomputeArrangement();
+    renderSongPackageStatus();
+  }
+
+  async function loadPackageStatuses() {
+    const statuses = await invoke("get_song_package_statuses").catch(() => []);
+    state.packageStatuses = Object.fromEntries((statuses || []).map((status) => [status.songId, status]));
+    renderSongs();
     renderSongPackageStatus();
   }
 
@@ -1277,7 +1284,7 @@
   resetSongEditor();
   resetSetlistEditor();
 
-  Promise.all([loadLibrary(), loadRuntime(), loadLive(), loadPairingCode()]).catch((error) => showError(error));
+  Promise.all([loadLibrary(), loadPackageStatuses(), loadRuntime(), loadLive(), loadPairingCode()]).catch((error) => showError(error));
   setInterval(() => loadRuntime().catch(() => {}), 2500);
   setInterval(() => loadLive().catch(() => {}), 750);
   // The iPad plain-language surface can mutate the same SQLite library.
