@@ -794,6 +794,7 @@
     if (!runtime) return;
 
     $("databasePath").textContent = runtime.databasePath || "Unavailable";
+    $("libraryRoot").textContent = runtime.libraryRoot || "Unavailable";
     if (runtime.startupWarning) showError(runtime.startupWarning);
     $("serverDot").className = "dot " + (runtime.serverRunning ? "ready" : "waiting");
     $("serverStatus").textContent = runtime.serverRunning
@@ -869,11 +870,46 @@
   $("addSong").addEventListener("click", () => {
     const songId = $("songPicker").value;
     if (!songId) return;
-    state.draftItems.push({ id: uid(), songId });
+    state.draftItems.push({ id: uid(), songId, transition: defaultTransition() });
     renderDraft();
   });
   $("saveSetlist").addEventListener("click", saveSetlist);
   $("syncSetlist").addEventListener("click", () => syncSetlistById(state.editingSetlistId));
+  $("buildService").addEventListener("click", async () => {
+    $("buildService").disabled = true;
+    $("buildService").textContent = "Building…";
+    showError("");
+    try {
+      let setlist = null;
+      if (state.editingSetlistId) {
+        setlist = await saveSetlist();
+      } else {
+        setlist = await saveSetlist();
+      }
+      if (!setlist) return;
+
+      const result = await invoke("build_service", {
+        id: setlist.id,
+        buildAbleton: true
+      });
+      await Promise.all([loadLibrary(), loadRuntime(), loadLive()]);
+      const warnings = result.service && result.service.warnings || [];
+      if (result.abletonBuilt) {
+        showNotice("Service folder built and stems placed into Ableton.");
+      } else {
+        const reason = result.abletonError || "Ableton build is pending.";
+        showError("Service folder built, but Ableton was not completed: " + reason);
+      }
+      if (warnings.length) {
+        showError(warnings.join(" · "));
+      }
+    } catch (error) {
+      showError(error);
+    } finally {
+      $("buildService").disabled = false;
+      $("buildService").textContent = "Build Service + Ableton";
+    }
+  });
   $("deleteSetlist").addEventListener("click", async () => {
     if (!state.editingSetlistId || !confirm("Delete this setlist?")) return;
     const deletingId = state.editingSetlistId;
@@ -904,6 +940,17 @@
   $("desktopNextSong").addEventListener("click", () => jumpAdjacentSong(1));
   $("desktopPrevSection").addEventListener("click", () => jumpAdjacentSection(-1));
   $("desktopNextSectionBtn").addEventListener("click", () => jumpAdjacentSection(1));
+
+  $("revealLibrary").addEventListener("click", async () => {
+    try {
+      const path = await invoke("reveal_library_root");
+      $("libraryRoot").textContent = path || $("libraryRoot").textContent;
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("setlistGap").addEventListener("input", () => renderDraft());
 
   $("newPairingCode").addEventListener("click", async () => {
     try {
