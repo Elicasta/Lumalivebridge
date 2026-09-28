@@ -89,7 +89,8 @@ pub fn build_arrangement(setlist: &Setlist, songs: &[Song]) -> Result<Arrangemen
             .copied()
             .ok_or_else(|| format!("Missing song \"{}\"", item.song_id))?;
 
-        let beats_per_bar = song.meter.numerator.max(1) as f64;
+        let denominator = song.meter.denominator.max(1) as f64;
+        let beats_per_bar = song.meter.numerator.max(1) as f64 * (4.0 / denominator);
         let length_beats = song.length_bars as f64 * beats_per_bar;
         let mut sections = Vec::new();
 
@@ -176,10 +177,12 @@ pub fn locate_position(arrangement: &Arrangement, beat: f64) -> Option<LiveConte
         }
     }
 
-    let beats_per_bar = song.meter.numerator.max(1) as f64;
+    let denominator = song.meter.denominator.max(1) as f64;
+    let unit_beats = 4.0 / denominator;
+    let beats_per_bar = song.meter.numerator.max(1) as f64 * unit_beats;
     let local_beat = (beat - song.start_beat).max(0.0);
     let current_bar = (local_beat / beats_per_bar).floor() as i64 + 1;
-    let beat_in_bar = (local_beat % beats_per_bar).floor() as i64 + 1;
+    let beat_in_bar = ((local_beat % beats_per_bar) / unit_beats).floor() as i64 + 1;
     let duration = (song.end_beat - song.start_beat).max(1.0);
     let progress = ((beat - song.start_beat) / duration).clamp(0.0, 1.0);
 
