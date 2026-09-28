@@ -730,4 +730,7 @@
   Promise.all([loadLibrary(), loadRuntime(), loadLive()]).catch((error) => showError(error));
   setInterval(() => loadRuntime().catch(() => {}), 2500);
   setInterval(() => loadLive().catch(() => {}), 750);
+  // The iPad plain-language surface can mutate the same SQLite library.
+  // Refresh the desktop lists without requiring a relaunch.
+  setInterval(() => loadLibrary().catch(() => {}), 4000);
 })();
