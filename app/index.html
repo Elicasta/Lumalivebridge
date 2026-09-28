@@ -145,13 +145,22 @@
       </section>
 
       <section class="page" data-page-panel="busk">
-        <article class="panel">
-          <div class="panel-heading">
-            <div><span class="eyebrow">SESSION VIEW</span><h2>Busk</h2></div>
-            <button id="desktopStopAll" class="panic">STOP ALL</button>
+        <article class="panel desktop-busk-panel">
+          <div class="panel-heading busk-heading">
+            <div>
+              <span class="eyebrow">SESSION VIEW</span>
+              <h2>Busk</h2>
+              <p id="desktopBuskMeta" class="muted compact-copy">Waiting for Ableton…</p>
+            </div>
+            <div class="busk-actions">
+              <button id="desktopBuskSync" class="quiet">Sync</button>
+              <button id="desktopBuskPlay">▶ Play</button>
+              <button id="desktopBuskStop">■ Stop</button>
+              <button id="desktopStopAll" class="panic">STOP ALL</button>
+            </div>
           </div>
-          <p class="muted">Pads, vamps, shout loops, altar moments, walk-in music, and other spontaneous Session View tools live here.</p>
-          <div id="desktopSceneGrid" class="desktop-scene-grid"></div>
+          <p class="muted">Full Session View control with scene launch, clip launch, per-track stop, clip colors, tempo details, and live activity.</p>
+          <div id="desktopBuskGrid" class="desktop-busk-scroll"></div>
         </article>
       </section>
 
@@ -179,9 +188,32 @@
             </label>
             <p class="hint">One section per line using <code>Name @ bar</code>. These stay with the song every time you use it.</p>
 
+            <div class="song-package-card">
+              <div class="panel-heading compact-heading">
+                <div><span class="eyebrow">SONG FILES</span><h3>Portable Song Package</h3></div>
+                <span id="songPackageBadge" class="package-badge">NEW</span>
+              </div>
+              <div class="package-grid">
+                <div><span>Folder</span><code id="songPackagePath">Save the song first</code></div>
+                <div><span>Ableton Project</span><strong id="songProjectStatus">Not attached</strong></div>
+                <div><span>Original stems</span><strong id="songStemStatus">0</strong></div>
+                <div><span>Cue files</span><strong id="songCueStatus">0</strong></div>
+              </div>
+              <p id="songPackageWarning" class="hint package-warning">Save the song, then attach its Ableton Project and original stems here.</p>
+              <div class="package-actions">
+                <button id="openSongFolder" class="quiet" disabled>Open Folder</button>
+                <button id="attachSongProject" class="quiet" disabled>Attach Ableton Project</button>
+                <button id="importSongStems" class="quiet" disabled>Import Stems</button>
+                <button id="rescanSongPackage" class="quiet" disabled>Rescan</button>
+              </div>
+            </div>
+
             <div class="actions">
               <button id="deleteSong" class="danger-link" hidden>Delete</button>
-              <button id="saveSong" class="primary">Save Song</button>
+              <div class="action-cluster">
+                <button id="saveSongCopy" class="quiet" hidden>Save as New</button>
+                <button id="saveSong" class="primary">Create Song</button>
+              </div>
             </div>
           </article>
 
@@ -272,6 +304,14 @@
             <span class="eyebrow">ABLETON ADAPTER</span>
             <h3>Localhost Only</h3>
             <p class="muted">Luma Live.amxd talks only to this Mac at <code>127.0.0.1:17878</code>. It does not host another iPad website.</p>
+          </article>
+
+          <article class="panel">
+            <span class="eyebrow">SYSTEM CHECK</span>
+            <h3>Hard Test This Mac</h3>
+            <p class="muted">Checks the local library, write access, service template, every song package, and the Ableton adapter connection.</p>
+            <button id="runSystemCheck" class="primary library-button">Run Full Check</button>
+            <div id="systemCheckResults" class="system-check-results"></div>
           </article>
 
           <article class="panel">
