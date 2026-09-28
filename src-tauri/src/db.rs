@@ -139,6 +139,11 @@ impl Database {
                 FOREIGN KEY (setlist_id) REFERENCES setlists(id) ON DELETE CASCADE,
                 FOREIGN KEY (song_id) REFERENCES songs(id) ON DELETE RESTRICT
             );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
             "#,
         )
         .map_err(|e| e.to_string())?;
@@ -165,7 +170,31 @@ impl Database {
         Ok(LibraryPayload {
             songs: self.list_songs()?,
             setlists: self.list_setlists()?,
+            active_setlist_id: self.active_setlist_id()?,
         })
+    }
+
+    pub fn active_setlist_id(&self) -> Result<Option<String>, String> {
+        let conn = self.conn.lock().map_err(|_| "Database lock failed".to_string())?;
+        conn.query_row(
+            "SELECT value FROM app_settings WHERE key = 'active_setlist_id'",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map(|value| value.flatten().filter(|id| !id.is_empty()))
+        .map_err(|e| e.to_string())
+    }
+
+    pub fn set_active_setlist_id(&self, id: Option<&str>) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|_| "Database lock failed".to_string())?;
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('active_setlist_id', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     pub fn list_songs(&self) -> Result<Vec<Song>, String> {
@@ -454,9 +483,14 @@ impl Database {
     }
 
     pub fn delete_setlist(&self, id: &str) -> Result<(), String> {
+        let active = self.active_setlist_id()?;
         let conn = self.conn.lock().map_err(|_| "Database lock failed".to_string())?;
         conn.execute("DELETE FROM setlists WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
+        drop(conn);
+        if active.as_deref() == Some(id) {
+            self.set_active_setlist_id(None)?;
+        }
         Ok(())
     }
 }
