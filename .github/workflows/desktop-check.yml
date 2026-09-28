@@ -26,3 +26,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Check desktop app
         run: cargo check --manifest-path src-tauri/Cargo.toml
+      - name: Run desktop unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
