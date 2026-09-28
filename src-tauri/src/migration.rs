@@ -42,7 +42,7 @@ fn import_folder_library(db: &Database, root: &Path) -> Result<usize, String> {
 
     if setlists_dir.is_dir() {
         for entry in fs::read_dir(&setlists_dir).map_err(|e| e.to_string())? {
-            let path = entry.map_err(|e| e.to_str()).map_err(|e| e.to_string())?.path();
+            let path = entry.map_err(|e| e.to_string())?.path();
             if path.extension().and_then(|value| value.to_str()) != Some("json") {
                 continue;
             }
