@@ -1,5 +1,6 @@
 use crate::models::{
     LibraryPayload, Meter, Section, SectionInput, Setlist, SetlistInput, SetlistItem, Song, SongInput,
+    TransitionSpec,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashSet;
@@ -91,6 +92,30 @@ fn normalize_sections(input: &[SectionInput], length_bars: i64) -> Result<Vec<Se
     Ok(sections)
 }
 
+fn validate_transition(transition: &TransitionSpec) -> Result<TransitionSpec, String> {
+    let mode = transition.mode.trim().to_lowercase();
+    if !["inherit", "gap", "segue", "hold", "vamp", "mashup"].contains(&mode.as_str()) {
+        return Err("Transition must be inherit, gap, segue, hold, vamp, or mashup".into());
+    }
+    if transition.bars < 0 || transition.bars > 64 {
+        return Err("Transition bars must be 0–64".into());
+    }
+    if mode == "vamp" && transition.vamp_section_id.as_deref().unwrap_or("").trim().is_empty() {
+        return Err("Vamp transitions need a vamp section".into());
+    }
+
+    Ok(TransitionSpec {
+        mode,
+        bars: transition.bars,
+        vamp_section_id: transition
+            .vamp_section_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+    })
+}
+
 impl Database {
     fn initialize(conn: Connection, use_wal: bool) -> Result<Self, String> {
         if use_wal {
@@ -147,6 +172,22 @@ impl Database {
             "#,
         )
         .map_err(|e| e.to_string())?;
+
+        // Transition fields were added after the first SQLite schema shipped.
+        // SQLite returns "duplicate column name" on existing upgraded databases,
+        // so these best-effort ALTERs intentionally preserve older libraries.
+        let _ = conn.execute(
+            "ALTER TABLE setlist_items ADD COLUMN transition_mode TEXT NOT NULL DEFAULT 'inherit'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE setlist_items ADD COLUMN transition_bars INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE setlist_items ADD COLUMN vamp_section_id TEXT",
+            [],
+        );
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -356,7 +397,8 @@ impl Database {
         for setlist in &mut setlists {
             let mut item_stmt = conn
                 .prepare(
-                    "SELECT id, song_id FROM setlist_items
+                    "SELECT id, song_id, transition_mode, transition_bars, vamp_section_id
+                     FROM setlist_items
                      WHERE setlist_id = ?1 ORDER BY sort_index",
                 )
                 .map_err(|e| e.to_string())?;
@@ -365,6 +407,11 @@ impl Database {
                     Ok(SetlistItem {
                         id: row.get(0)?,
                         song_id: row.get(1)?,
+                        transition: TransitionSpec {
+                            mode: row.get(2)?,
+                            bars: row.get(3)?,
+                            vamp_section_id: row.get(4)?,
+                        },
                     })
                 })
                 .map_err(|e| e.to_string())?;
@@ -431,19 +478,55 @@ impl Database {
 
         let mut items = Vec::with_capacity(input.items.len());
         for (index, item) in input.items.iter().enumerate() {
+            let transition = validate_transition(&item.transition)?;
+            if transition.mode == "vamp" {
+                let requested = transition.vamp_section_id.as_deref().unwrap_or("");
+                let song = tx
+                    .query_row(
+                        "SELECT id FROM songs WHERE id = ?1",
+                        params![item.song_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .map_err(|e| e.to_string())?;
+                let exists: Option<String> = tx
+                    .query_row(
+                        "SELECT id FROM sections WHERE song_id = ?1 AND id = ?2",
+                        params![song, requested],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|e| e.to_string())?;
+                if exists.is_none() {
+                    return Err(format!(
+                        "Vamp section {} is not in song {}",
+                        requested, item.song_id
+                    ));
+                }
+            }
+
             let item_id = item
                 .id
                 .clone()
                 .unwrap_or_else(|| Uuid::new_v4().to_string());
             tx.execute(
-                "INSERT INTO setlist_items (id, setlist_id, song_id, sort_index)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![item_id, id, item.song_id, index as i64],
+                "INSERT INTO setlist_items
+                 (id, setlist_id, song_id, sort_index, transition_mode, transition_bars, vamp_section_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    item_id,
+                    id,
+                    item.song_id,
+                    index as i64,
+                    transition.mode,
+                    transition.bars,
+                    transition.vamp_section_id
+                ],
             )
             .map_err(|e| e.to_string())?;
             items.push(SetlistItem {
                 id: item_id,
                 song_id: item.song_id.clone(),
+                transition,
             });
         }
 
