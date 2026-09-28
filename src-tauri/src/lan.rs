@@ -450,6 +450,11 @@ pub(crate) async fn apply_plain_plan(state: &AppState, plan: &PlainPlan) -> Resu
                     .get("songId")
                     .and_then(Value::as_str)
                     .map(str::to_string);
+                let instance_id = step
+                    .data
+                    .get("instanceId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
                 let section_id = step
                     .data
                     .get("sectionId")
@@ -457,7 +462,7 @@ pub(crate) async fn apply_plain_plan(state: &AppState, plan: &PlainPlan) -> Resu
                     .map(str::to_string);
                 let body = JumpBody {
                     song_id,
-                    instance_id: None,
+                    instance_id,
                     section_id,
                 };
                 jump_impl(state, &body).await?
