@@ -135,6 +135,7 @@ function validateCommand(input, options = {}) {
       break;
 
     case "stop_all_clips":
+    case "refresh_session":
       normalized = {};
       break;
 
@@ -254,8 +255,14 @@ function validateCommand(input, options = {}) {
         track: target(args.track, "create_arrangement_audio_clip.track"),
         filePath: cleanName(args.filePath, "create_arrangement_audio_clip.filePath"),
         position,
-        name: cleanName(args.name, "create_arrangement_audio_clip.name")
+        name: cleanName(args.name, "create_arrangement_audio_clip.name"),
+        transposeSemitones: args.transposeSemitones == null
+          ? 0
+          : integer(args.transposeSemitones, "create_arrangement_audio_clip.transposeSemitones")
       };
+      if (normalized.transposeSemitones < -12 || normalized.transposeSemitones > 12) {
+        throw new Error("Arrangement clip transpose must be between -12 and +12 semitones");
+      }
       break;
     }
 
