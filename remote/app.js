@@ -13,6 +13,7 @@
     setlists: [],
     activeSetlistId: null,
     arrangement: null,
+    pendingCommandText: null,
     mixerSignature: "",
     sectionSignature: "",
     sceneSignature: ""
@@ -459,6 +460,39 @@
     }
   }
 
+  function clearCommandPreview() {
+    state.pendingCommandText = null;
+    $("commandPreviewPanel").hidden = true;
+    $("commandPreviewSummary").textContent = "—";
+    $("commandPreviewMeta").textContent = "";
+  }
+
+  async function previewPlainCommand(text) {
+    const value = String(text || "").trim();
+    if (!value) return;
+    $("commandPreviewBtn").disabled = true;
+    try {
+      showError("");
+      const data = await api("/api/command/preview", {
+        method: "POST",
+        body: { text: value }
+      });
+      const preview = data.preview || {};
+      state.pendingCommandText = value;
+      $("commandPreviewSummary").textContent = preview.summary || "Ready to apply";
+      $("commandPreviewMeta").textContent = [
+        preview.requiresAbleton ? "ABLETON" : "LOCAL",
+        preview.changesLibrary ? "CHANGES LIBRARY" : "LIVE CONTROL"
+      ].join(" · ");
+      $("commandPreviewPanel").hidden = false;
+    } catch (error) {
+      clearCommandPreview();
+      showError(error.message);
+    } finally {
+      $("commandPreviewBtn").disabled = false;
+    }
+  }
+
   async function runPlainCommand(text) {
     const value = String(text || "").trim();
     if (!value) return;
@@ -477,6 +511,7 @@
         : "Command completed.";
       showNotice(summary);
       $("commandInput").value = "";
+      clearCommandPreview();
     } catch (error) {
       showError(error.message);
     } finally {
@@ -535,15 +570,24 @@
   $("nextSectionBtn").addEventListener("click", () => jumpAdjacentSection(1));
   $("stopAllBtn").addEventListener("click", () => direct({ type: "stop_all_clips", args: {} }).catch((error) => showError(error.message)));
 
+  $("commandPreviewBtn").addEventListener("click", () => previewPlainCommand($("commandInput").value));
   $("commandBtn").addEventListener("click", () => runPlainCommand($("commandInput").value));
+  $("commandApplyBtn").addEventListener("click", () => {
+    if (state.pendingCommandText) runPlainCommand(state.pendingCommandText);
+  });
+  $("commandCancelBtn").addEventListener("click", clearCommandPreview);
+  $("commandInput").addEventListener("input", clearCommandPreview);
   $("commandInput").addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      runPlainCommand($("commandInput").value);
+      previewPlainCommand($("commandInput").value);
     }
   });
   document.querySelectorAll("[data-command]").forEach((button) => {
-    button.addEventListener("click", () => runPlainCommand(button.dataset.command));
+    button.addEventListener("click", () => {
+      $("commandInput").value = button.dataset.command;
+      previewPlainCommand(button.dataset.command);
+    });
   });
 
   if ("serviceWorker" in navigator) {
