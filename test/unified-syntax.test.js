@@ -58,3 +58,35 @@ test("iPad Perform can load a service directly", () => {
   assert.match(remoteJs, /performSceneSignature/);
   assert.match(remoteCss, /overflow-anchor:none/);
 });
+
+
+test("desktop song workflow exposes package files and full Busk controls", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "app", "index.html"), "utf8");
+  const js = fs.readFileSync(path.join(__dirname, "..", "app", "app.js"), "utf8");
+
+  assert.match(html, /id="attachSongProject"/);
+  assert.match(html, /id="importSongStems"/);
+  assert.match(html, /id="saveSongCopy"/);
+  assert.match(html, /id="desktopBuskGrid"/);
+  assert.match(html, /id="runSystemCheck"/);
+
+  assert.match(js, /attach_song_project/);
+  assert.match(js, /import_song_stems/);
+  assert.match(js, /transposeSemitones/);
+  assert.match(js, /fire_clip/);
+  assert.match(js, /stop_track/);
+});
+
+test("new song creation is protected from silent overwrite", () => {
+  const db = fs.readFileSync(path.join(__dirname, "..", "src-tauri", "src", "db.rs"), "utf8");
+  assert.match(db, /candidate = format!\("\{\}-\{\}", base, suffix\)/);
+  assert.match(db, /new_song_with_same_title_gets_a_unique_id/);
+});
+
+test("desktop recurring poll does not recursively rescan song packages", () => {
+  const js = fs.readFileSync(path.join(__dirname, "..", "app", "app.js"), "utf8");
+  assert.match(js, /async function loadPackageStatuses/);
+  assert.match(js, /setInterval\(\(\) => loadLibrary/);
+  const libraryFn = js.slice(js.indexOf("async function loadLibrary"), js.indexOf("async function loadRuntime"));
+  assert.doesNotMatch(libraryFn, /get_song_package_statuses/);
+});
