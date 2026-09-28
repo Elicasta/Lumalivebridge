@@ -8,6 +8,8 @@ mod state;
 
 use crate::db::Database;
 use crate::models::{LibraryPayload, RuntimeInfo, Setlist, SetlistInput, Song, SongInput};
+use crate::plain::PlainPlan;
+use serde_json::Value;
 use crate::state::AppState;
 use std::fs;
 use std::path::Path;
@@ -105,6 +107,41 @@ fn get_runtime_info(state: State<'_, AppState>) -> Result<RuntimeInfo, String> {
         .map_err(|_| "Runtime state lock failed".to_string())
 }
 
+#[tauri::command]
+async fn get_live_control(state: State<'_, AppState>) -> Result<Value, String> {
+    lan::live_payload(state.inner()).await
+}
+
+#[tauri::command]
+async fn direct_live_control(state: State<'_, AppState>, command: Value) -> Result<Value, String> {
+    lan::direct_impl(state.inner(), command).await
+}
+
+#[tauri::command]
+async fn jump_live_control(
+    state: State<'_, AppState>,
+    song_id: Option<String>,
+    instance_id: Option<String>,
+    section_id: Option<String>,
+) -> Result<Value, String> {
+    lan::jump_by_ids(state.inner(), song_id, instance_id, section_id).await
+}
+
+#[tauri::command]
+async fn load_service(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    lan::load_setlist_impl(state.inner(), &id).await
+}
+
+#[tauri::command]
+async fn plan_plain_language(state: State<'_, AppState>, text: String) -> Result<PlainPlan, String> {
+    lan::build_plain_plan(state.inner(), &text).await
+}
+
+#[tauri::command]
+async fn apply_plain_language(state: State<'_, AppState>, plan: PlainPlan) -> Result<Value, String> {
+    lan::apply_plain_plan(state.inner(), &plan).await
+}
+
 fn main() {
     install_panic_logger();
     append_diagnostic("Luma Live starting");
@@ -178,7 +215,13 @@ fn main() {
             delete_song,
             save_setlist,
             delete_setlist,
-            get_runtime_info
+            get_runtime_info,
+            get_live_control,
+            direct_live_control,
+            jump_live_control,
+            load_service,
+            plan_plain_language,
+            apply_plain_language
         ])
         .run(context);
 
