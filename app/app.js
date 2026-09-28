@@ -149,7 +149,7 @@
       return;
     }
 
-    $("songPackageBadge").textContent = status.projectAttached && status.stemCount > 0 ? "READY" : "NEEDS FILES";
+    $("songPackageBadge").textContent = status.sourceAls && status.stemCount > 0 ? "READY" : "NEEDS FILES";
     $("songPackagePath").textContent = status.packagePath || "Unavailable";
     $("songProjectStatus").textContent = status.sourceAls || (status.projectAttached ? "Project attached · no .als found" : "Not attached");
     $("songStemStatus").textContent = String(status.stemCount || 0);
@@ -198,7 +198,7 @@
     list.innerHTML = "";
     state.songs.forEach((song) => {
       const status = state.packageStatuses[song.id];
-      const ready = status && status.projectAttached && status.stemCount > 0;
+      const ready = status && status.sourceAls && status.stemCount > 0;
       const button = document.createElement("button");
       button.className = "data-row song-data-row";
       button.innerHTML =
@@ -1253,7 +1253,7 @@
     try {
       const result = await invoke("run_system_check");
       const packages = result.packages || [];
-      const ready = packages.filter((item) => item.projectAttached && item.stemCount > 0).length;
+      const ready = packages.filter((item) => item.sourceAls && item.stemCount > 0).length;
       host.innerHTML =
         '<div class="check-row ' + (result.libraryWritable ? "pass" : "fail") + '"><strong>Library write access</strong><span>' + (result.libraryWritable ? "PASS" : "FAIL") + '</span></div>' +
         '<div class="check-row ' + (result.templateExists ? "pass" : "warn") + '"><strong>Church Standard.als</strong><span>' + (result.templateExists ? "FOUND" : "MISSING") + '</span></div>' +
