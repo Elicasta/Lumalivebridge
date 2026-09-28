@@ -137,7 +137,14 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const command = validateCommand(body.command);
       const result = await sendToMax(command, command.type === "sync_cue_points" ? 10000 : 3500);
-      await refreshState();
+
+      // Volume faders can generate a rapid stream of writes. The LiveAPI side
+      // pushes state after every command and the desktop polls state separately,
+      // so avoid an extra full snapshot for each slider movement.
+      if (command.type !== "set_track_volume") {
+        await refreshState();
+      }
+
       writeAudit("command_applied", { command });
       return json(res, 200, {
         ok: true,
