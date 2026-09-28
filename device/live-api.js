@@ -1,6 +1,8 @@
 autowatch = 1;
 outlets = 1;
 
+var bulkUpdateDepth = 0;
+
 var serviceTimeline = { songs: [], transitions: [] };
 var serviceTimelineTask = null;
 var serviceTimelineSongIndex = -1;
@@ -578,6 +580,16 @@ function execute(command) {
 
   if (type === "queue_jump_to_time") {
     return queueJumpToTime(args);
+  }
+
+  if (type === "begin_bulk_update") {
+    bulkUpdateDepth += 1;
+    return { depth: bulkUpdateDepth };
+  }
+
+  if (type === "end_bulk_update") {
+    if (bulkUpdateDepth > 0) bulkUpdateDepth -= 1;
+    return { depth: bulkUpdateDepth };
   }
 
   if (type === "ensure_track") {
