@@ -61,9 +61,29 @@ pub struct Song {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TransitionSpec {
+    pub mode: String,
+    pub bars: i64,
+    pub vamp_section_id: Option<String>,
+}
+
+impl Default for TransitionSpec {
+    fn default() -> Self {
+        Self {
+            mode: "inherit".into(),
+            bars: 0,
+            vamp_section_id: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SetlistItemInput {
     pub id: Option<String>,
     pub song_id: String,
+    #[serde(default)]
+    pub transition: TransitionSpec,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +91,7 @@ pub struct SetlistItemInput {
 pub struct SetlistItem {
     pub id: String,
     pub song_id: String,
+    pub transition: TransitionSpec,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
