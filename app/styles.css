@@ -601,3 +601,16 @@ button:disabled { opacity: .35; cursor: default; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+
+/* Busk track header controls */
+.busk-track-header { position: relative; }
+.busk-track-title { display: grid; grid-template-columns: 24px 1fr; gap: 5px; align-items: center; min-width: 0; }
+.busk-track-title > span { color: #737982; font-size: 9px; font-variant-numeric: tabular-nums; }
+.busk-track-title > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.busk-track-header > small { display: block; margin-top: 5px; padding-right: 54px; color: #757c85; font-size: 8px; }
+.busk-track-actions { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 4px; }
+.busk-mini-toggle { min-width: 24px; min-height: 24px; padding: 0; border-radius: 7px; font-size: 9px; }
+.busk-mini-toggle.active.mute { background: #d99f4c; color: #15100a; border-color: #efb55e; }
+.busk-mini-toggle.active.solo { background: #e7d759; color: #16140a; border-color: #fff185; }
+#desktopBuskClick.active { background: #f2f2f2; color: #0b0c0e; border-color: #fff; }
