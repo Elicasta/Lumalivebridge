@@ -262,7 +262,9 @@
     for (const item of setlist.items) {
       const song = songsById.get(item.songId);
       if (!song) continue;
-      const beatsPerBar = Number(song.meter && song.meter.numerator || 4);
+      const numerator = Number(song.meter && song.meter.numerator || 4);
+      const denominator = Number(song.meter && song.meter.denominator || 4);
+      const beatsPerBar = numerator * (4 / denominator);
       const startBeat = cursor;
       const endBeat = startBeat + Number(song.lengthBars) * beatsPerBar;
       songs.push({
