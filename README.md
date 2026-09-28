@@ -33,7 +33,7 @@ Ableton Live
 
 There is no second Max-hosted iPad site and no second Max-owned song library.
 
-## v0.4 pages
+## v0.4.1 pages
 
 ### Song Control
 
@@ -115,6 +115,8 @@ Repeated appearances of the same song remain distinct through the setlist item's
 
 The command bar is available from Song Control on both the Mac and remote.
 
+By default, pressing **Enter** or **Preview** performs a dry run first. Luma resolves the requested song, section, setlist, track, meter, or destination without changing Ableton or SQLite, then shows exactly what it intends to do. **Apply** runs that previewed command. **Run Now** remains available for fast live use when you intentionally want to skip confirmation.
+
 Examples currently supported include:
 
 ```text
@@ -133,6 +135,7 @@ set BGV volume to 45%
 load Sunday AM
 add Gratitude to Sunday AM after Hineh Ma Tov
 make Bridge start at bar 65
+set Bridge to bar 65 in Goodness of God
 panic
 ```
 
