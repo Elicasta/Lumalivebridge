@@ -1,4 +1,4 @@
-const CACHE = "luma-live-v050-service-builder";
+const CACHE = "luma-live-v051-workflow-fix";
 const ASSETS = ["/", "/styles.css", "/app.js", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
