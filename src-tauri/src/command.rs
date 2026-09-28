@@ -119,11 +119,31 @@ async fn jump(state: &AppState, arrangement: &Arrangement, instance_id: &str, se
         }),
     )
     .await?;
-    bridge::jump_to_time(time).await?;
+    let queued = section_id.is_some();
+    if queued {
+        let beats_per_bar =
+            song.meter.numerator.max(1) as f64 * (4.0 / song.meter.denominator.max(1) as f64);
+        bridge::send(
+            "queue_jump_to_time",
+            json!({
+                "time": time,
+                "origin": song.start_beat,
+                "beatsPerBar": beats_per_bar
+            }),
+        )
+        .await?;
+    } else {
+        bridge::jump_to_time(time).await?;
+    }
+
     Ok(json!({
         "summary": if let Some(section_id) = section_id {
             let section = song.sections.iter().find(|item| item.id == section_id);
-            format!("Jumped to {} · {}", song.title, section.map(|item| item.name.as_str()).unwrap_or(section_id))
+            if queued {
+                format!("Queued {} · {} for the next bar", song.title, section.map(|item| item.name.as_str()).unwrap_or(section_id))
+            } else {
+                format!("Jumped to {} · {}", song.title, section.map(|item| item.name.as_str()).unwrap_or(section_id))
+            }
         } else {
             format!("Jumped to {}", song.title)
         }
