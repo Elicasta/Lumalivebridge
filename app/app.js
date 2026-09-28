@@ -24,6 +24,7 @@
   };
 
   const volumeTimers = new Map();
+  let swingTimer = null;
 
   const titles = {
     live: ["LIVE", "Song Control"],
@@ -694,6 +695,17 @@
   function renderBusk() {
     const live = state.live || {};
     $("desktopBuskClick").classList.toggle("active", !!live.metronome);
+    $("desktopSessionRecord").classList.toggle("active", !!live.sessionRecord);
+    $("desktopCaptureMidi").disabled = live.canCaptureMidi === false;
+    $("desktopUndo").disabled = live.canUndo === false;
+    $("desktopRedo").disabled = live.canRedo === false;
+    const selectedClip = live.selectedClip || null;
+    $("desktopClearClip").disabled = !(selectedClip && selectedClip.hasClip);
+    $("desktopDuplicateClip").disabled = !(selectedClip && selectedClip.hasClip);
+    $("desktopDoubleClip").disabled = !(selectedClip && selectedClip.hasClip && selectedClip.isMidiClip);
+    const swing = Number.isFinite(Number(live.swingAmount)) ? Number(live.swingAmount) : 0;
+    if (document.activeElement !== $("desktopSwing")) $("desktopSwing").value = String(swing);
+    $("desktopSwingValue").textContent = Math.round(swing * 100) + "%";
     const session = live.session || {};
     const tracks = Array.isArray(session.tracks) ? session.tracks : [];
     const scenes = Array.isArray(session.scenes) && session.scenes.length ? session.scenes : (Array.isArray(live.scenes) ? live.scenes : []);
@@ -1206,6 +1218,24 @@
     } catch (_) {
       await loadLive();
     }
+  });
+  $("desktopPrevScene").addEventListener("click", () => direct({ type: "prev_scene", args: {} }).catch((error) => showError(error)));
+  $("desktopNextScene").addEventListener("click", () => direct({ type: "next_scene", args: {} }).catch((error) => showError(error)));
+  $("desktopTapTempo").addEventListener("click", () => direct({ type: "tap_tempo", args: {} }).catch((error) => showError(error)));
+  $("desktopCaptureMidi").addEventListener("click", () => direct({ type: "capture_midi", args: {} }).catch((error) => showError(error)));
+  $("desktopSessionRecord").addEventListener("click", () => direct({ type: "session_record", args: { bars: 0 } }).catch((error) => showError(error)));
+  $("desktopUndo").addEventListener("click", () => direct({ type: "undo", args: {} }).catch((error) => showError(error)));
+  $("desktopRedo").addEventListener("click", () => direct({ type: "redo", args: {} }).catch((error) => showError(error)));
+  $("desktopClearClip").addEventListener("click", () => direct({ type: "clear_selected_clip", args: {} }).catch((error) => showError(error)));
+  $("desktopDuplicateClip").addEventListener("click", () => direct({ type: "duplicate_selected_clip", args: {} }).catch((error) => showError(error)));
+  $("desktopDoubleClip").addEventListener("click", () => direct({ type: "double_selected_clip", args: {} }).catch((error) => showError(error)));
+  $("desktopSwing").addEventListener("input", () => {
+    const value = Math.max(0, Math.min(1, Number($("desktopSwing").value || 0)));
+    $("desktopSwingValue").textContent = Math.round(value * 100) + "%";
+    clearTimeout(swingTimer);
+    swingTimer = setTimeout(() => {
+      direct({ type: "set_swing", args: { value } }).catch((error) => showError(error));
+    }, 100);
   });
 
   $("desktopPrevSong").addEventListener("click", () => jumpAdjacentSong(-1));
