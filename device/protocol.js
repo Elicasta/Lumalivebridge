@@ -13,6 +13,7 @@ const COMMAND_TYPES = Object.freeze([
   "set_metronome",
   "fire_scene",
   "stop_all_clips",
+  "refresh_session",
   "create_midi_clip",
   "duplicate_clip",
   "set_clip_loop",
