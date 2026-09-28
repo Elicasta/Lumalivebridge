@@ -1060,6 +1060,7 @@ mod tests {
             db: std::sync::Arc::new(crate::db::Database::open_in_memory().unwrap()),
             runtime: std::sync::Arc::new(std::sync::RwLock::new(crate::models::RuntimeInfo::default())),
             remote_token: std::sync::Arc::new("test-token".to_string()),
+            pairing: std::sync::Arc::new(crate::pairing::PairingGate::new()),
         }
     }
 
