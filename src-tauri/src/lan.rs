@@ -419,9 +419,17 @@ fn lan_urls(port: u16, token: &str) -> Vec<String> {
 }
 
 pub async fn run_server(state: AppState) -> anyhow::Result<()> {
-    let port = 7878u16;
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let mut bound = None;
+    for port in 7878u16..=7897u16 {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
+        if let Ok(listener) = tokio::net::TcpListener::bind(addr).await {
+            bound = Some((port, listener));
+            break;
+        }
+    }
+
+    let (port, listener) = bound
+        .ok_or_else(|| anyhow::anyhow!("No free Luma Live LAN port between 7878 and 7897"))?;
 
     {
         let mut runtime = state
