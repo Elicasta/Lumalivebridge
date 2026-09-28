@@ -147,6 +147,429 @@ async fn sync_setlist(state: &AppState, setlist_id: &str) -> Result<Value, Strin
     }))
 }
 
+fn preview_value(
+    text: &str,
+    kind: &str,
+    summary: String,
+    requires_ableton: bool,
+    changes_library: bool,
+) -> Value {
+    json!({
+        "text": text,
+        "kind": kind,
+        "summary": summary,
+        "requiresAbleton": requires_ableton,
+        "changesLibrary": changes_library
+    })
+}
+
+pub async fn preview(state: &AppState, text: &str) -> Result<Value, String> {
+    let raw = text.trim();
+    if raw.is_empty() {
+        return Err("Type a command first".into());
+    }
+    let lower = normalized(raw);
+
+    let song_build_re = Regex::new(
+        r"(?i)^create\s+(?:a\s+)?(?:worship\s+|praise\s+|church\s+)?song\s+(?:called|named)\s+(.+?)\s+at\s+(\d+(?:\.\d+)?)\s*bpm(?:\s+(?:in|at)\s+(\d+)\s*/\s*(\d+))?\s+with\s+(.+)$"
+    ).unwrap();
+    if let Some(caps) = song_build_re.captures(raw) {
+        let title = caps[1].trim();
+        let bpm: f64 = caps[2].parse().map_err(|_| "Invalid BPM".to_string())?;
+        if !(20.0..=999.0).contains(&bpm) {
+            return Err("Tempo must be between 20 and 999 BPM".into());
+        }
+        let meter = if caps.get(3).is_some() && caps.get(4).is_some() {
+            Meter {
+                numerator: caps[3].parse().map_err(|_| "Invalid meter".to_string())?,
+                denominator: caps[4].parse().map_err(|_| "Invalid meter".to_string())?,
+            }
+        } else {
+            Meter::default()
+        };
+        if meter.numerator < 1 || meter.numerator > 32 || ![1, 2, 4, 8, 16].contains(&meter.denominator) {
+            return Err("Meter must use a 1–32 numerator and denominator 1, 2, 4, 8, or 16".into());
+        }
+        let (sections, length_bars) = parse_section_specs(&caps[5])?;
+        return Ok(preview_value(
+            raw,
+            "create_song",
+            format!(
+                "Create {} at {} BPM in {}/{} with {} sections across {} bars",
+                title,
+                bpm,
+                meter.numerator,
+                meter.denominator,
+                sections.len(),
+                length_bars
+            ),
+            false,
+            true,
+        ));
+    }
+
+    if lower.contains("create") && lower.contains("session") {
+        let bpm_re = Regex::new(r"(?i)(?:at|tempo|bpm(?:\s+to)?)\s*(\d+(?:\.\d+)?)\s*bpm?").unwrap();
+        let bpm = bpm_re
+            .captures(raw)
+            .and_then(|caps| caps.get(1))
+            .and_then(|value| value.as_str().parse::<f64>().ok());
+        if let Some(bpm) = bpm {
+            if !(20.0..=999.0).contains(&bpm) {
+                return Err("Tempo must be between 20 and 999 BPM".into());
+            }
+        }
+        let suffix = bpm.map(|value| format!(" at {} BPM", value)).unwrap_or_default();
+        return Ok(preview_value(
+            raw,
+            "create_session",
+            format!("Build the standard 12-track Luma church layout in Ableton{}", suffix),
+            true,
+            false,
+        ));
+    }
+
+    let meter_re = Regex::new(r"(?i)^(?:set\s+)?(?:meter|time\s+signature)(?:\s+to)?\s+(\d+)\s*/\s*(\d+)$").unwrap();
+    if let Some(caps) = meter_re.captures(raw) {
+        let numerator: i64 = caps[1].parse().map_err(|_| "Invalid meter".to_string())?;
+        let denominator: i64 = caps[2].parse().map_err(|_| "Invalid meter".to_string())?;
+        if numerator < 1 || numerator > 32 || ![1, 2, 4, 8, 16].contains(&denominator) {
+            return Err("Meter must use a 1–32 numerator and denominator 1, 2, 4, 8, or 16".into());
+        }
+        return Ok(preview_value(
+            raw,
+            "set_meter",
+            format!("Set Ableton meter to {}/{}", numerator, denominator),
+            true,
+            false,
+        ));
+    }
+
+    let volume_re = Regex::new(r"(?i)^set\s+(?:track\s+)?(.+?)\s+volume\s+to\s+(\d+(?:\.\d+)?)\s*%$").unwrap();
+    if let Some(caps) = volume_re.captures(raw) {
+        let track = caps[1].trim();
+        let percent: f64 = caps[2].parse().map_err(|_| "Invalid volume".to_string())?;
+        if !(0.0..=100.0).contains(&percent) {
+            return Err("Track volume must be between 0% and 100%".into());
+        }
+        return Ok(preview_value(
+            raw,
+            "track_volume",
+            format!("Set {} volume to {}%", track, percent),
+            true,
+            false,
+        ));
+    }
+
+    if matches!(lower.as_str(), "panic" | "stop all" | "stop all clips") {
+        return Ok(preview_value(
+            raw,
+            "stop_all",
+            "Stop all Session View clips".into(),
+            true,
+            false,
+        ));
+    }
+
+    let tempo_re = Regex::new(r"(?i)^(?:set\s+)?tempo(?:\s+to)?\s+(\d+(?:\.\d+)?)\s*(?:bpm)?$").unwrap();
+    if let Some(caps) = tempo_re.captures(raw) {
+        let bpm: f64 = caps[1].parse().map_err(|_| "Invalid BPM".to_string())?;
+        if !(20.0..=999.0).contains(&bpm) {
+            return Err("Tempo must be between 20 and 999 BPM".into());
+        }
+        return Ok(preview_value(
+            raw,
+            "set_tempo",
+            format!("Set Ableton tempo to {} BPM", bpm),
+            true,
+            false,
+        ));
+    }
+
+    if matches!(lower.as_str(), "play" | "start" | "start playback" | "play arrangement") {
+        return Ok(preview_value(raw, "play", "Start Arrangement playback".into(), true, false));
+    }
+
+    if matches!(lower.as_str(), "stop" | "pause" | "stop playback" | "stop arrangement") {
+        return Ok(preview_value(raw, "stop", "Stop Arrangement playback".into(), true, false));
+    }
+
+    if matches!(lower.as_str(), "click on" | "metronome on" | "turn click on") {
+        return Ok(preview_value(raw, "click", "Turn the Ableton click on".into(), true, false));
+    }
+
+    if matches!(lower.as_str(), "click off" | "metronome off" | "turn click off") {
+        return Ok(preview_value(raw, "click", "Turn the Ableton click off".into(), true, false));
+    }
+
+    let track_re = Regex::new(r"(?i)^(mute|unmute|solo|unsolo)\s+(.+)$").unwrap();
+    if let Some(caps) = track_re.captures(raw) {
+        let action = normalized(&caps[1]);
+        let track = caps[2].trim();
+        return Ok(preview_value(
+            raw,
+            "track_state",
+            format!("{} {}", action, track),
+            true,
+            false,
+        ));
+    }
+
+    if matches!(lower.as_str(), "next song" | "go to next song") {
+        let (_arrangement, context) = live_context(state).await?;
+        let next = context.next_song.ok_or_else(|| "There is no next song".to_string())?;
+        return Ok(preview_value(
+            raw,
+            "jump_song",
+            format!("Jump to next song: {}", next.title),
+            true,
+            false,
+        ));
+    }
+
+    if matches!(lower.as_str(), "previous song" | "go to previous song") {
+        let (_arrangement, context) = live_context(state).await?;
+        let previous = context.previous_song.ok_or_else(|| "There is no previous song".to_string())?;
+        return Ok(preview_value(
+            raw,
+            "jump_song",
+            format!("Jump to previous song: {}", previous.title),
+            true,
+            false,
+        ));
+    }
+
+    if matches!(lower.as_str(), "next section" | "go to next section") {
+        let (_arrangement, context) = live_context(state).await?;
+        let next = context.next_section_name.ok_or_else(|| "There is no next section".to_string())?;
+        return Ok(preview_value(
+            raw,
+            "jump_section",
+            format!("Jump to next section: {}", next),
+            true,
+            false,
+        ));
+    }
+
+    if matches!(lower.as_str(), "previous section" | "go to previous section") {
+        let (arrangement, context) = live_context(state).await?;
+        let song = arrangement
+            .songs
+            .iter()
+            .find(|song| song.instance_id == context.instance_id)
+            .ok_or_else(|| "Current song is unavailable".to_string())?;
+        let index = context
+            .section_id
+            .as_ref()
+            .and_then(|id| song.sections.iter().position(|section| &section.id == id))
+            .unwrap_or(0);
+        if index == 0 {
+            return Err("There is no previous section".into());
+        }
+        return Ok(preview_value(
+            raw,
+            "jump_section",
+            format!("Jump to previous section: {}", song.sections[index - 1].name),
+            true,
+            false,
+        ));
+    }
+
+    let jump_re = Regex::new(r"(?i)^(?:go|jump)(?:\s+to)?\s+(.+)$").unwrap();
+    if let Some(caps) = jump_re.captures(raw) {
+        let requested = normalized(&caps[1]);
+        let (arrangement, context) = live_context(state).await?;
+        let song = arrangement
+            .songs
+            .iter()
+            .find(|song| song.instance_id == context.instance_id)
+            .ok_or_else(|| "Current song is unavailable".to_string())?;
+        if let Some(section) = song
+            .sections
+            .iter()
+            .find(|section| normalized(&section.name) == requested)
+            .or_else(|| song.sections.iter().find(|section| normalized(&section.name).contains(&requested)))
+        {
+            return Ok(preview_value(
+                raw,
+                "jump_section",
+                format!("Jump to {} · {}", song.title, section.name),
+                true,
+                false,
+            ));
+        }
+    }
+
+    let setlist_build_re = Regex::new(
+        r"(?i)^(?:create|build|make)\s+(?:a\s+)?(?:setlist|service)\s+(?:(?:called|named)\s+)?(.+?)\s+with\s+(.+)$"
+    ).unwrap();
+    if let Some(caps) = setlist_build_re.captures(raw) {
+        let title = caps[1].trim();
+        let raw_songs = caps[2].trim().trim_end_matches('.');
+        let splitter = Regex::new(r"\s*,\s*|\s+and\s+").unwrap();
+        let requested: Vec<&str> = splitter
+            .split(raw_songs)
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .collect();
+        if requested.is_empty() {
+            return Err("Add at least one song to the setlist".into());
+        }
+        let library = state.db.list_songs()?;
+        for name in &requested {
+            let needle = normalized(name);
+            if !library.iter().any(|song| normalized(&song.title) == needle) {
+                return Err(format!("Song \"{}\" was not found in the library", name));
+            }
+        }
+        return Ok(preview_value(
+            raw,
+            "create_setlist",
+            format!("Create setlist {} with {} songs", title, requested.len()),
+            false,
+            true,
+        ));
+    }
+
+    let remove_re = Regex::new(r"(?i)^remove\s+(.+?)\s+from\s+(.+?)(?:\s+(?:setlist|service))?$").unwrap();
+    if let Some(caps) = remove_re.captures(raw) {
+        let song_name = normalized(&caps[1]);
+        let setlist_name = normalized(&caps[2]);
+        let song = state
+            .db
+            .list_songs()?
+            .into_iter()
+            .find(|song| normalized(&song.title) == song_name)
+            .ok_or_else(|| format!("Song \"{}\" was not found", caps[1].trim()))?;
+        let setlist = state
+            .db
+            .list_setlists()?
+            .into_iter()
+            .find(|item| normalized(&item.title) == setlist_name)
+            .ok_or_else(|| format!("Setlist \"{}\" was not found", caps[2].trim()))?;
+        if !setlist.items.iter().any(|item| item.song_id == song.id) {
+            return Err(format!("{} is not in {}", song.title, setlist.title));
+        }
+        return Ok(preview_value(
+            raw,
+            "remove_song",
+            format!("Remove {} from {}", song.title, setlist.title),
+            false,
+            true,
+        ));
+    }
+
+    let load_song_re = Regex::new(r"(?i)^(?:load|open|bring\s+in)\s+(?:the\s+)?song\s+(.+)$").unwrap();
+    if let Some(caps) = load_song_re.captures(raw) {
+        let requested = normalized(caps[1].trim().trim_end_matches('.'));
+        let arrangement = active_arrangement(state)?
+            .ok_or_else(|| "No active setlist is synced. Add the song to a setlist first.".to_string())?;
+        let song = arrangement
+            .songs
+            .iter()
+            .find(|song| normalized(&song.title) == requested)
+            .ok_or_else(|| format!("{} is not in the active setlist", caps[1].trim()))?;
+        return Ok(preview_value(
+            raw,
+            "jump_song",
+            format!("Jump to song {}", song.title),
+            true,
+            false,
+        ));
+    }
+
+    let load_re = Regex::new(r"(?i)^(?:load|sync)\s+(.+?)(?:\s+(?:setlist|service))?$").unwrap();
+    if let Some(caps) = load_re.captures(raw) {
+        let requested = normalized(&caps[1]);
+        let setlist = state
+            .db
+            .list_setlists()?
+            .into_iter()
+            .find(|item| normalized(&item.title) == requested)
+            .ok_or_else(|| format!("Setlist \"{}\" was not found", caps[1].trim()))?;
+        return Ok(preview_value(
+            raw,
+            "load_setlist",
+            format!("Sync {} to Ableton and make it the active service", setlist.title),
+            true,
+            true,
+        ));
+    }
+
+    let add_re = Regex::new(r"(?i)^add\s+(.+?)\s+to\s+(.+?)(?:\s+after\s+(.+))?$").unwrap();
+    if let Some(caps) = add_re.captures(raw) {
+        let song_name = normalized(&caps[1]);
+        let setlist_name = normalized(&caps[2]);
+        let song = state
+            .db
+            .list_songs()?
+            .into_iter()
+            .find(|item| normalized(&item.title) == song_name)
+            .ok_or_else(|| format!("Song \"{}\" was not found", caps[1].trim()))?;
+        let setlist = state
+            .db
+            .list_setlists()?
+            .into_iter()
+            .find(|item| normalized(&item.title) == setlist_name)
+            .ok_or_else(|| format!("Setlist \"{}\" was not found", caps[2].trim()))?;
+        let after = if let Some(value) = caps.get(3) {
+            let needle = normalized(value.as_str());
+            let songs = state.db.list_songs()?;
+            let after_song = songs
+                .iter()
+                .find(|item| normalized(&item.title) == needle)
+                .ok_or_else(|| format!("Song \"{}\" was not found", value.as_str().trim()))?;
+            Some(after_song.title.clone())
+        } else {
+            None
+        };
+        let summary = after
+            .map(|name| format!("Add {} to {} after {}", song.title, setlist.title, name))
+            .unwrap_or_else(|| format!("Add {} to the end of {}", song.title, setlist.title));
+        return Ok(preview_value(raw, "add_song", summary, false, true));
+    }
+
+    let bar_re = Regex::new(
+        r"(?i)^(?:make|set|move)\s+(.+?)\s+(?:start\s+)?(?:at|to)\s+bar\s+(\d+)(?:\s+in\s+(.+))?$"
+    ).unwrap();
+    if let Some(caps) = bar_re.captures(raw) {
+        let requested_section = normalized(&caps[1]);
+        let start_bar: i64 = caps[2].parse().map_err(|_| "Invalid bar".to_string())?;
+        let song = if let Some(song_name) = caps.get(3) {
+            let requested_song = normalized(song_name.as_str());
+            state
+                .db
+                .list_songs()?
+                .into_iter()
+                .find(|song| normalized(&song.title) == requested_song)
+                .ok_or_else(|| format!("Song \"{}\" was not found", song_name.as_str().trim()))?
+        } else {
+            let (_arrangement, context) = live_context(state).await?;
+            state
+                .db
+                .get_song(&context.song_id)?
+                .ok_or_else(|| "Current song is not in the library".to_string())?
+        };
+        if start_bar < 1 || start_bar > song.length_bars {
+            return Err(format!("Bar must be between 1 and {} for {}", song.length_bars, song.title));
+        }
+        let section = song
+            .sections
+            .iter()
+            .find(|section| normalized(&section.name) == requested_section)
+            .ok_or_else(|| format!("Section \"{}\" was not found in {}", caps[1].trim(), song.title))?;
+        return Ok(preview_value(
+            raw,
+            "move_section",
+            format!("Move {} · {} to bar {}", song.title, section.name, start_bar),
+            false,
+            true,
+        ));
+    }
+
+    Err("I understood that as a Luma command, but it is not in the local command grammar yet.".into())
+}
+
 pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
     let raw = text.trim();
     if raw.is_empty() {
@@ -531,15 +954,27 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
         }));
     }
 
-    let bar_re = Regex::new(r"(?i)^make\s+(.+?)\s+start\s+at\s+bar\s+(\d+)$").unwrap();
+    let bar_re = Regex::new(
+        r"(?i)^(?:make|set|move)\s+(.+?)\s+(?:start\s+)?(?:at|to)\s+bar\s+(\d+)(?:\s+in\s+(.+))?$"
+    ).unwrap();
     if let Some(caps) = bar_re.captures(raw) {
         let requested_section = normalized(&caps[1]);
         let start_bar: i64 = caps[2].parse().map_err(|_| "Invalid bar".to_string())?;
-        let (_arrangement, context) = live_context(state).await?;
-        let song = state
-            .db
-            .get_song(&context.song_id)?
-            .ok_or_else(|| "Current song is not in the library".to_string())?;
+        let song = if let Some(song_name) = caps.get(3) {
+            let requested_song = normalized(song_name.as_str());
+            state
+                .db
+                .list_songs()?
+                .into_iter()
+                .find(|song| normalized(&song.title) == requested_song)
+                .ok_or_else(|| format!("Song \"{}\" was not found", song_name.as_str().trim()))?
+        } else {
+            let (_arrangement, context) = live_context(state).await?;
+            state
+                .db
+                .get_song(&context.song_id)?
+                .ok_or_else(|| "Current song is not in the library".to_string())?
+        };
 
         let mut found = false;
         let sections: Vec<SectionInput> = song
