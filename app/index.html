@@ -213,13 +213,15 @@
               <button id="addSong">Add Song</button>
             </div>
 
+            <p class="hint transition-help">Each song controls what happens <strong>after it</strong>: normal gap, seamless segue, hold, vamp, or mashup overlap.</p>
             <div id="setlistItems" class="setlist-stack"></div>
 
             <div class="actions">
               <button id="deleteSetlist" class="danger-link" hidden>Delete</button>
               <div class="action-cluster">
-                <button id="syncSetlist" class="quiet" disabled>Sync to Ableton</button>
-                <button id="saveSetlist" class="primary">Save Setlist</button>
+                <button id="syncSetlist" class="quiet" disabled>Sync Locators</button>
+                <button id="saveSetlist" class="quiet">Save Setlist</button>
+                <button id="buildService" class="primary">Build Service + Ableton</button>
               </div>
             </div>
           </article>
@@ -241,6 +243,14 @@
             <h3>Offline Library</h3>
             <p class="muted">Songs and setlists live in one SQLite database. Max no longer owns a second song library.</p>
             <div class="detail"><span>Database</span><code id="databasePath">Loading…</code></div>
+          </article>
+
+          <article class="panel">
+            <span class="eyebrow">MEDIA LIBRARY</span>
+            <h3>Song Packages</h3>
+            <p class="muted">Each song gets its own portable folder with its Ableton authoring set, stems, cues, and manifest. Service builds are collected snapshots.</p>
+            <div class="detail"><span>Root</span><code id="libraryRoot">Loading…</code></div>
+            <button id="revealLibrary" class="quiet library-button">Open Library Folder</button>
           </article>
 
           <article class="panel pairing-settings">
