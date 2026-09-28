@@ -188,6 +188,10 @@ impl Database {
             "ALTER TABLE setlist_items ADD COLUMN vamp_section_id TEXT",
             [],
         );
+        let _ = conn.execute(
+            "ALTER TABLE setlist_items ADD COLUMN transpose_semitones INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -284,17 +288,36 @@ impl Database {
         validate_meter(&input.meter)?;
         let sections = normalize_sections(&input.sections, input.length_bars)?;
 
-        let id = input
-            .id
-            .as_deref()
-            .map(slugify)
-            .unwrap_or_else(|| slugify(title));
+        let requested_id = input.id.as_deref().map(slugify);
         let artist = input.artist.clone().unwrap_or_default().trim().to_string();
         let song_key = input.key.clone().unwrap_or_default().trim().to_string();
         let updated_at = now_ms();
 
         let mut conn = self.conn.lock().map_err(|_| "Database lock failed".to_string())?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+        let id = if let Some(id) = requested_id {
+            id
+        } else {
+            let base = slugify(title);
+            let mut candidate = base.clone();
+            let mut suffix = 2;
+            loop {
+                let exists: Option<String> = tx
+                    .query_row(
+                        "SELECT id FROM songs WHERE id = ?1",
+                        params![candidate],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|e| e.to_string())?;
+                if exists.is_none() {
+                    break candidate;
+                }
+                candidate = format!("{}-{}", base, suffix);
+                suffix += 1;
+            }
+        };
 
         tx.execute(
             "INSERT INTO songs
@@ -397,7 +420,7 @@ impl Database {
         for setlist in &mut setlists {
             let mut item_stmt = conn
                 .prepare(
-                    "SELECT id, song_id, transition_mode, transition_bars, vamp_section_id
+                    "SELECT id, song_id, transition_mode, transition_bars, vamp_section_id, transpose_semitones
                      FROM setlist_items
                      WHERE setlist_id = ?1 ORDER BY sort_index",
                 )
@@ -412,6 +435,7 @@ impl Database {
                             bars: row.get(3)?,
                             vamp_section_id: row.get(4)?,
                         },
+                        transpose_semitones: row.get(5)?,
                     })
                 })
                 .map_err(|e| e.to_string())?;
@@ -479,6 +503,9 @@ impl Database {
         let mut items = Vec::with_capacity(input.items.len());
         for (index, item) in input.items.iter().enumerate() {
             let transition = validate_transition(&item.transition)?;
+            if item.transpose_semitones < -12 || item.transpose_semitones > 12 {
+                return Err("Song transpose must be between -12 and +12 semitones".into());
+            }
             if transition.mode == "vamp" {
                 let requested = transition.vamp_section_id.as_deref().unwrap_or("");
                 let song = tx
@@ -510,8 +537,8 @@ impl Database {
                 .unwrap_or_else(|| Uuid::new_v4().to_string());
             tx.execute(
                 "INSERT INTO setlist_items
-                 (id, setlist_id, song_id, sort_index, transition_mode, transition_bars, vamp_section_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (id, setlist_id, song_id, sort_index, transition_mode, transition_bars, vamp_section_id, transpose_semitones)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     item_id,
                     id,
@@ -519,7 +546,8 @@ impl Database {
                     index as i64,
                     transition.mode,
                     transition.bars,
-                    transition.vamp_section_id
+                    transition.vamp_section_id,
+                    item.transpose_semitones
                 ],
             )
             .map_err(|e| e.to_string())?;
@@ -527,6 +555,7 @@ impl Database {
                 id: item_id,
                 song_id: item.song_id.clone(),
                 transition,
+                transpose_semitones: item.transpose_semitones,
             });
         }
 
