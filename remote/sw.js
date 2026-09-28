@@ -1,4 +1,4 @@
-const CACHE = "luma-live-v051-workflow-fix";
+const CACHE = "luma-live-v052-workflow-pass";
 const ASSETS = ["/", "/styles.css", "/app.js", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
