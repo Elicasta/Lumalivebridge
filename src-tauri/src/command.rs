@@ -483,3 +483,28 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
 
     Err("I understood that as a Luma command, but it is not in the local command grammar yet.".into())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_repeat_and_bar_suffixes_in_either_order() {
+        let (sections_a, length_a) =
+            parse_section_specs("Intro 4 bars, Bridge x2 8 bars, Vamp 4 bars").unwrap();
+        assert_eq!(sections_a.len(), 4);
+        assert_eq!(sections_a[1].name, "Bridge 1");
+        assert_eq!(sections_a[2].name, "Bridge 2");
+        assert_eq!(sections_a[1].start_bar, 5);
+        assert_eq!(sections_a[2].start_bar, 13);
+        assert_eq!(length_a, 24);
+
+        let (sections_b, length_b) =
+            parse_section_specs("Intro 4 bars, Bridge 8 bars x2, Vamp 4 bars").unwrap();
+        assert_eq!(sections_b.len(), 4);
+        assert_eq!(sections_b[1].name, "Bridge 1");
+        assert_eq!(sections_b[2].name, "Bridge 2");
+        assert_eq!(length_b, 24);
+    }
+}
