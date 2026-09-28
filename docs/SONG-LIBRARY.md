@@ -1,17 +1,18 @@
 # Song Library and Arrangement Sync
 
-Luma Live v0.2 treats Ableton as the playback engine and Luma Live as the reusable song/setlist layer.
+Luma Live.app owns the permanent song and setlist model in SQLite.
 
 ## Song model
 
-A saved song contains:
+A song contains:
 
-- title and artist
+- title
+- artist
 - BPM
 - key
 - meter
 - total length in bars
-- named sections with local start bars
+- reusable sections with local start bars
 
 Example:
 
@@ -32,50 +33,38 @@ Example:
 }
 ```
 
-Songs are stored locally under:
+The exact SQLite file path is shown in the Mac app under **Settings → Local Database**.
 
-```text
-~/Library/Application Support/LumaLiveBridge/library/songs/
-```
+## Arrangement map
 
-Setlists live beside them under `library/setlists/`.
+A setlist is converted into sequential Arrangement placements. Every placement keeps the setlist item ID as an `instanceId`, so the same song can appear more than once without ambiguous jumps.
 
-## Ableton locator namespace
+Meter denominator is respected when converting bars to Ableton timeline beats.
 
-When a setlist is synced, Luma Live creates only locators prefixed with `LL|`.
+## Locator namespace
 
-Song markers:
+Luma owns only locators prefixed with `LL|`.
 
 ```text
 LL|SONG|goodness-of-god|Goodness of God
-```
-
-Section markers:
-
-```text
 LL|SECTION|goodness-of-god|chorus|Chorus
 ```
 
-On the next sync, Luma Live removes and recreates only its own `LL|` locators. Existing non-Luma locators are left alone. If a user locator already occupies the exact same time, Luma Live skips that marker rather than deleting the user's locator.
+Sync removes/replaces only Luma locators. Existing non-Luma locators are not intentionally deleted. If a user locator occupies the exact same time, the Max adapter skips the Luma locator rather than overwriting it.
 
-## Setlist flow
+## Live flow
 
-1. Open the Luma Live remote.
-2. Save songs in **Songs**.
-3. Open **Setlist**, add songs, and reorder them.
-4. Set the gap between songs.
-5. Press **Sync to Ableton**.
-6. Ableton receives namespaced song and section locators.
-7. The **Live** page follows the Ableton playhead and derives:
-   - current song
-   - current section
-   - next section
-8. Tapping a section on the remote jumps to that exact section in that exact setlist song instance.
+1. Build reusable songs in **Library**.
+2. Build a service under **Setlists**.
+3. Press **Sync to Ableton**.
+4. Luma sends namespaced song/section locators through the localhost Max adapter.
+5. Song Control derives the current song and section from the Ableton playhead.
+6. Section and song buttons resolve against the exact setlist instance.
+7. Track volume, mute, solo, transport, and click stay on the Song Control page.
+8. Session View remains separate under **Busk**.
 
-The setlist supports repeated songs because each placement has its own instance ID.
+## Current boundary
 
-## Current v0.2 boundary
+Arrangement Sync currently covers metadata, navigation, locator sync, current-position context, BPM/meter changes on jumps, and live controls.
 
-Arrangement Sync currently handles the navigation layer: song boundaries, section locators, current-song tracking, section jumps, BPM, and meter on jumps.
-
-It does **not yet place audio stems into Arrangement View**. Audio import is the next layer. Keeping that separate prevents brittle direct editing of `.als` XML and lets Ableton remain responsible for its own session file format.
+It does not yet import/place audio stems. Section jumps are immediate rather than next-bar quantized.
