@@ -423,6 +423,8 @@
         nextStart += Number(setlist.gapBars || 0) * beatsPerBar;
       } else if (transition.mode === "gap") {
         nextStart += Number(transition.bars || 0) * beatsPerBar;
+      } else if (transition.mode === "hold") {
+        nextStart += beatsPerBar;
       } else if (transition.mode === "mashup") {
         nextStart -= Number(transition.bars || 0) * beatsPerBar;
       }
