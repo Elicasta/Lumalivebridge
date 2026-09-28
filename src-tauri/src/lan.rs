@@ -285,29 +285,32 @@ async fn sync_setlist(
         .map(|point| json!({ "time": point.time, "name": point.name }))
         .collect();
 
-    bridge::send(
-        "sync_cue_points",
-        json!({ "replace": true, "points": points }),
-    )
-    .await
-    .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
-
     state
         .db
         .set_active_setlist_id(Some(&setlist.id))
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
 
+    let sync_result = bridge::send(
+        "sync_cue_points",
+        json!({ "replace": true, "points": points }),
+    )
+    .await;
+    let bridge_connected = sync_result.is_ok();
+    let sync_error = sync_result.err();
+
     let live = enriched_live_state(&state)
         .await
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
-    let library = library_value(&state, true)
+    let library = library_value(&state, bridge_connected)
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
 
     Ok(Json(json!({
         "ok": true,
         "arrangement": arrangement,
         "state": live,
-        "library": library
+        "library": library,
+        "bridgeConnected": bridge_connected,
+        "syncError": sync_error
     })))
 }
 
