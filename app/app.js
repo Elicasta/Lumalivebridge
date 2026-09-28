@@ -155,6 +155,19 @@
     }
   }
 
+  function defaultTransition() {
+    return { mode: "inherit", bars: 0, vampSectionId: null };
+  }
+
+  function normalizeTransition(value) {
+    const raw = value || {};
+    return {
+      mode: raw.mode || "inherit",
+      bars: Number.isFinite(Number(raw.bars)) ? Number(raw.bars) : 0,
+      vampSectionId: raw.vampSectionId || null
+    };
+  }
+
   function resetSetlistEditor() {
     state.editingSetlistId = null;
     state.draftItems = [];
@@ -168,7 +181,10 @@
 
   function editSetlist(setlist) {
     state.editingSetlistId = setlist.id;
-    state.draftItems = setlist.items.map((item) => ({ ...item }));
+    state.draftItems = setlist.items.map((item) => ({
+      ...item,
+      transition: normalizeTransition(item.transition)
+    }));
     $("setlistEditorTitle").textContent = setlist.title;
     $("setlistTitle").value = setlist.title;
     $("setlistGap").value = setlist.gapBars;
@@ -177,19 +193,114 @@
     renderDraft();
   }
 
+  function transitionLabel(transition, song) {
+    const t = normalizeTransition(transition);
+    if (t.mode === "inherit") return "Default Gap";
+    if (t.mode === "gap") return t.bars + " Bar Gap";
+    if (t.mode === "segue") return "Segue";
+    if (t.mode === "hold") return "Hold";
+    if (t.mode === "mashup") return "Mashup · " + t.bars + " Bar" + (t.bars === 1 ? "" : "s");
+    if (t.mode === "vamp") {
+      const section = song && (song.sections || []).find((item) => item.id === t.vampSectionId);
+      return "Vamp · " + (section ? section.name : "Choose Section");
+    }
+    return t.mode;
+  }
+
+  function renderTransitionEditor(row, item, song, index) {
+    const host = row.querySelector(".transition-editor");
+    if (!host) return;
+    const isLast = index === state.draftItems.length - 1;
+    if (isLast) {
+      host.innerHTML = '<span class="transition-end">END OF SERVICE</span>';
+      return;
+    }
+
+    const transition = normalizeTransition(item.transition);
+    item.transition = transition;
+
+    host.innerHTML =
+      '<label class="transition-mode-label">AFTER THIS SONG' +
+        '<select class="transition-mode">' +
+          '<option value="inherit">Default Gap</option>' +
+          '<option value="gap">Gap</option>' +
+          '<option value="segue">Segue / No Gap</option>' +
+          '<option value="hold">Hold / Stop</option>' +
+          '<option value="vamp">Vamp Until Released</option>' +
+          '<option value="mashup">Mashup / Overlap</option>' +
+        '</select>' +
+      '</label>' +
+      '<div class="transition-detail"></div>';
+
+    const mode = host.querySelector(".transition-mode");
+    mode.value = transition.mode;
+    const detail = host.querySelector(".transition-detail");
+
+    function renderDetail() {
+      const selected = mode.value;
+      transition.mode = selected;
+
+      if (selected === "gap" || selected === "mashup") {
+        if (!transition.bars) transition.bars = selected === "mashup" ? 4 : 2;
+        detail.innerHTML =
+          '<label>' + (selected === "mashup" ? "OVERLAP BARS" : "GAP BARS") +
+          '<input class="transition-bars" type="number" min="0" max="64" value="' +
+          Math.max(0, Number(transition.bars || 0)) + '"></label>';
+        detail.querySelector(".transition-bars").addEventListener("input", (event) => {
+          transition.bars = Math.max(0, Number(event.target.value || 0));
+        });
+      } else if (selected === "vamp") {
+        const sections = song ? song.sections || [] : [];
+        if (!transition.vampSectionId && sections.length) {
+          const likely = sections.find((section) => /vamp|bridge|chorus/i.test(section.name));
+          transition.vampSectionId = (likely || sections[sections.length - 1]).id;
+        }
+        detail.innerHTML =
+          '<label>VAMP SECTION<select class="transition-vamp">' +
+          sections.map((section) =>
+            '<option value="' + escapeHtml(section.id) + '">' + escapeHtml(section.name) + '</option>'
+          ).join("") + '</select></label>';
+        const picker = detail.querySelector(".transition-vamp");
+        if (picker) {
+          picker.value = transition.vampSectionId || "";
+          picker.addEventListener("change", () => transition.vampSectionId = picker.value || null);
+        }
+      } else if (selected === "hold") {
+        detail.innerHTML = '<span class="transition-note">Stop at the song boundary. Continue when you are ready.</span>';
+        transition.bars = 0;
+        transition.vampSectionId = null;
+      } else if (selected === "segue") {
+        detail.innerHTML = '<span class="transition-note">Next song starts on the exact next downbeat with no gap.</span>';
+        transition.bars = 0;
+        transition.vampSectionId = null;
+      } else {
+        detail.innerHTML = '<span class="transition-note">Uses the service default gap of ' +
+          Number($("setlistGap").value || 0) + ' bars.</span>';
+        transition.bars = 0;
+        transition.vampSectionId = null;
+      }
+    }
+
+    mode.addEventListener("change", renderDetail);
+    renderDetail();
+  }
+
   function renderDraft() {
     const host = $("setlistItems");
     host.innerHTML = "";
+
     state.draftItems.forEach((item, index) => {
       const song = state.songs.find((entry) => entry.id === item.songId);
+      item.transition = normalizeTransition(item.transition);
       const row = document.createElement("div");
-      row.className = "setlist-item";
+      row.className = "setlist-item transition-setlist-item";
       row.innerHTML =
         '<span class="number">' + String(index + 1).padStart(2, "0") + '</span>' +
         '<span class="item-copy"><b>' + escapeHtml(song ? song.title : item.songId) + '</b><small>' +
         escapeHtml(song ? song.bpm + " BPM" + (song.key ? " · " + song.key : "") : "Missing song") +
         '</small></span>' +
-        '<div class="mini-actions"><button data-up>↑</button><button data-down>↓</button><button data-remove>×</button></div>';
+        '<div class="mini-actions"><button data-up>↑</button><button data-down>↓</button><button data-remove>×</button></div>' +
+        '<div class="transition-editor"></div>';
 
       const up = row.querySelector("[data-up]");
       const down = row.querySelector("[data-down]");
@@ -207,9 +318,14 @@
         state.draftItems.splice(index, 1);
         renderDraft();
       });
+
       host.appendChild(row);
+      renderTransitionEditor(row, item, song, index);
     });
-    if (!state.draftItems.length) host.innerHTML = '<div class="empty boxed">Add songs in service order.</div>';
+
+    if (!state.draftItems.length) {
+      host.innerHTML = '<div class="empty boxed">Add songs in service order.</div>';
+    }
   }
 
   function setlistPayload() {
@@ -217,7 +333,11 @@
       id: state.editingSetlistId,
       title: $("setlistTitle").value.trim(),
       gapBars: Number($("setlistGap").value),
-      items: state.draftItems.map((item) => ({ id: item.id, songId: item.songId }))
+      items: state.draftItems.map((item) => ({
+        id: item.id,
+        songId: item.songId,
+        transition: normalizeTransition(item.transition)
+      }))
     };
   }
 
@@ -249,8 +369,10 @@
       await loadLibrary();
       editSetlist(setlist);
       recomputeArrangement();
+      return setlist;
     } catch (error) {
       showError(error);
+      return null;
     }
   }
 
@@ -259,15 +381,23 @@
     const songsById = new Map(state.songs.map((song) => [song.id, song]));
     let cursor = 0;
     const songs = [];
+    const transitions = [];
 
-    for (const item of setlist.items) {
+    setlist.items.forEach((item, index) => {
       const song = songsById.get(item.songId);
-      if (!song) continue;
+      if (!song) return;
       const numerator = Number(song.meter && song.meter.numerator || 4);
       const denominator = Number(song.meter && song.meter.denominator || 4);
       const beatsPerBar = numerator * (4 / denominator);
       const startBeat = cursor;
       const endBeat = startBeat + Number(song.lengthBars) * beatsPerBar;
+      const sections = (song.sections || []).map((section) => ({
+        id: section.id,
+        name: section.name,
+        localStartBar: section.startBar,
+        startBeat: startBeat + (Number(section.startBar) - 1) * beatsPerBar
+      }));
+
       songs.push({
         instanceId: item.id,
         songId: song.id,
@@ -278,22 +408,43 @@
         meter: song.meter,
         startBeat,
         endBeat,
-        sections: (song.sections || []).map((section) => ({
-          id: section.id,
-          name: section.name,
-          localStartBar: section.startBar,
-          startBeat: startBeat + (Number(section.startBar) - 1) * beatsPerBar
-        }))
+        sections
       });
-      cursor = endBeat + Number(setlist.gapBars || 0) * beatsPerBar;
-    }
+
+      const nextItem = setlist.items[index + 1];
+      if (!nextItem) {
+        cursor = endBeat;
+        return;
+      }
+
+      const transition = normalizeTransition(item.transition);
+      let nextStart = endBeat;
+      if (transition.mode === "inherit") {
+        nextStart += Number(setlist.gapBars || 0) * beatsPerBar;
+      } else if (transition.mode === "gap") {
+        nextStart += Number(transition.bars || 0) * beatsPerBar;
+      } else if (transition.mode === "mashup") {
+        nextStart -= Number(transition.bars || 0) * beatsPerBar;
+      }
+
+      transitions.push({
+        fromInstanceId: item.id,
+        toInstanceId: nextItem.id,
+        mode: transition.mode,
+        bars: transition.bars,
+        nextStartBeat: nextStart,
+        vampSectionId: transition.vampSectionId
+      });
+      cursor = nextStart;
+    });
 
     return {
       setlistId: setlist.id,
       title: setlist.title,
       startBeat: 0,
-      endBeat: cursor,
-      songs
+      endBeat: songs.reduce((max, song) => Math.max(max, song.endBeat), cursor),
+      songs,
+      transitions
     };
   }
 
