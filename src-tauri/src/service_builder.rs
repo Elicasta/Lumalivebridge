@@ -566,3 +566,84 @@ pub fn build_service_folder(
         warnings,
     })
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arrangement::build_arrangement;
+    use crate::models::{
+        Meter, Section, Setlist, SetlistItem, Song, TransitionSpec,
+    };
+    use uuid::Uuid;
+
+    fn temp_root() -> PathBuf {
+        std::env::temp_dir().join(format!("luma-live-service-builder-{}", Uuid::new_v4()))
+    }
+
+    #[test]
+    fn builds_collected_song_audio_and_cues() {
+        let root = temp_root();
+        ensure_layout(&root).unwrap();
+
+        let song = Song {
+            id: "song-a".into(),
+            title: "Song A".into(),
+            artist: "Test".into(),
+            bpm: 72.0,
+            key: "C".into(),
+            meter: Meter {
+                numerator: 4,
+                denominator: 4,
+            },
+            length_bars: 8,
+            sections: vec![
+                Section {
+                    id: "intro".into(),
+                    name: "Intro".into(),
+                    start_bar: 1,
+                },
+                Section {
+                    id: "chorus".into(),
+                    name: "Chorus".into(),
+                    start_bar: 5,
+                },
+            ],
+            updated_at: 0,
+        };
+
+        let package = ensure_song_package(&root, &song).unwrap();
+        fs::write(package.join("Audio").join("Click.wav"), b"fake-wave").unwrap();
+        fs::write(
+            package.join("Cues").join("lighting.json"),
+            br#"{"schemaVersion":1,"events":[]}"#,
+        )
+        .unwrap();
+
+        let setlist = Setlist {
+            id: "service-a".into(),
+            title: "Sunday AM".into(),
+            gap_bars: 0,
+            items: vec![SetlistItem {
+                id: "instance-a".into(),
+                song_id: song.id.clone(),
+                transition: TransitionSpec::default(),
+            }],
+            updated_at: 0,
+        };
+
+        let arrangement = build_arrangement(&setlist, &[song.clone()]).unwrap();
+        let result =
+            build_service_folder(&root, &setlist, &[song], arrangement).unwrap();
+
+        assert_eq!(result.audio.len(), 1);
+        assert_eq!(result.audio[0].track, "CLICK");
+        assert_eq!(result.cues.len(), 1);
+        assert_eq!(result.cues[0].kind, "lighting");
+        assert!(Path::new(&result.audio[0].collected_path).exists());
+        assert!(Path::new(&result.cues[0].collected_path).exists());
+        assert!(Path::new(&result.manifest_path).exists());
+
+        fs::remove_dir_all(root).ok();
+    }
+}
