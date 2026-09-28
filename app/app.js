@@ -693,6 +693,7 @@
 
   function renderBusk() {
     const live = state.live || {};
+    $("desktopBuskClick").classList.toggle("active", !!live.metronome);
     const session = live.session || {};
     const tracks = Array.isArray(session.tracks) ? session.tracks : [];
     const scenes = Array.isArray(session.scenes) && session.scenes.length ? session.scenes : (Array.isArray(live.scenes) ? live.scenes : []);
@@ -707,6 +708,7 @@
       activeSceneIndex: live.activeSceneIndex,
       tracks: tracks.map((track) => [
         track.index, track.name, track.color, track.playingSlotIndex, track.firedSlotIndex,
+        track.mute, track.solo, track.volume,
         (track.clips || []).map((clip) => [clip.sceneIndex, clip.hasClip, clip.name, clip.color, clip.isRecording])
       ]),
       scenes: scenes.map((scene) => [scene.index, scene.name, scene.color, scene.tempoEnabled, scene.tempo, scene.isTriggered])
@@ -735,10 +737,28 @@
       const header = document.createElement("div");
       header.className = "busk-track-header";
       header.style.borderTopColor = liveColor(track.color);
+      const volume = Number.isFinite(Number(track.volume)) ? Math.round(Number(track.volume) * 100) : null;
       header.innerHTML =
-        '<span>' + String(index + 1).padStart(2, "0") + '</span>' +
-        '<strong>' + escapeHtml(track.name || ("Track " + (index + 1))) + '</strong>' +
-        '<small>' + (Number(track.playingSlotIndex) >= 0 ? "PLAYING SCENE " + (Number(track.playingSlotIndex) + 1) : "STOPPED") + '</small>';
+        '<div class="busk-track-title">' +
+          '<span>' + String(index + 1).padStart(2, "0") + '</span>' +
+          '<strong>' + escapeHtml(track.name || ("Track " + (index + 1))) + '</strong>' +
+        '</div>' +
+        '<small>' +
+          (Number(track.playingSlotIndex) >= 0 ? "PLAYING SCENE " + (Number(track.playingSlotIndex) + 1) : "STOPPED") +
+          (volume == null ? "" : " · " + volume + "%") +
+        '</small>' +
+        '<div class="busk-track-actions">' +
+          '<button class="busk-mini-toggle mute' + (track.mute ? " active" : "") + '" title="Mute">M</button>' +
+          '<button class="busk-mini-toggle solo' + (track.solo ? " active" : "") + '" title="Solo">S</button>' +
+        '</div>';
+      header.querySelector(".mute").addEventListener("click", () => direct({
+        type: "set_track_mute",
+        args: { track: { index: Number(track.index) }, value: !track.mute }
+      }).catch((error) => showError(error)));
+      header.querySelector(".solo").addEventListener("click", () => direct({
+        type: "set_track_solo",
+        args: { track: { index: Number(track.index) }, value: !track.solo }
+      }).catch((error) => showError(error)));
       grid.appendChild(header);
     });
 
@@ -1174,6 +1194,10 @@
     args: { enabled: !(state.live && state.live.metronome) }
   }).catch((error) => showError(error)));
   $("desktopStopAll").addEventListener("click", () => direct({ type: "stop_all_clips", args: {} }).catch((error) => showError(error)));
+  $("desktopBuskClick").addEventListener("click", () => direct({
+    type: "set_metronome",
+    args: { enabled: !(state.live && state.live.metronome) }
+  }).catch((error) => showError(error)));
   $("desktopBuskPlay").addEventListener("click", () => direct({ type: "start_playback", args: {} }).catch((error) => showError(error)));
   $("desktopBuskStop").addEventListener("click", () => direct({ type: "stop_playback", args: {} }).catch((error) => showError(error)));
   $("desktopBuskSync").addEventListener("click", async () => {
