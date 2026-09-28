@@ -421,13 +421,47 @@ async fn jump(
     )
     .await
     .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
-    bridge::jump_to_time(time)
+
+    let queued = input.section_id.is_some();
+    let mut boundary: Option<f64> = None;
+    if queued {
+        let beats_per_bar =
+            song.meter.numerator.max(1) as f64 * (4.0 / song.meter.denominator.max(1) as f64);
+        let response = bridge::send(
+            "queue_jump_to_time",
+            json!({
+                "time": time,
+                "origin": song.start_beat,
+                "beatsPerBar": beats_per_bar
+            }),
+        )
         .await
         .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
+        boundary = response
+            .get("result")
+            .and_then(|value| value.get("boundary"))
+            .and_then(Value::as_f64);
+    } else {
+        bridge::jump_to_time(time)
+            .await
+            .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
+    }
 
-    let live = enriched_live_state(&state)
+    let mut live = enriched_live_state(&state)
         .await
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))?;
+    if queued {
+        if let Some(object) = live.as_object_mut() {
+            object.insert(
+                "queuedJump".into(),
+                json!({
+                    "sectionId": input.section_id,
+                    "targetBeat": time,
+                    "boundary": boundary
+                }),
+            );
+        }
+    }
     Ok(Json(json!({ "ok": true, "state": live })))
 }
 
