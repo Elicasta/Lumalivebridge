@@ -1022,6 +1022,59 @@ pub async fn execute(state: &AppState, text: &str) -> Result<Value, String> {
 mod tests {
     use super::*;
 
+    fn test_state() -> AppState {
+        AppState {
+            db: std::sync::Arc::new(crate::db::Database::open_in_memory().unwrap()),
+            runtime: std::sync::Arc::new(std::sync::RwLock::new(crate::models::RuntimeInfo::default())),
+            remote_token: std::sync::Arc::new("test-token".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn preview_create_song_is_a_true_dry_run() {
+        let state = test_state();
+        let result = preview(
+            &state,
+            "create a song called Gratitude at 68 bpm in 4/4 with Intro 8 bars, Verse 8 bars, Chorus 8 bars",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result["kind"], "create_song");
+        assert_eq!(result["changesLibrary"], true);
+        assert!(state.db.list_songs().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn preview_named_song_section_move_resolves_without_mutating() {
+        let state = test_state();
+        state
+            .db
+            .save_song(SongInput {
+                id: None,
+                title: "Goodness of God".into(),
+                artist: None,
+                bpm: 68.0,
+                key: Some("Ab".into()),
+                meter: Meter::default(),
+                length_bars: 96,
+                sections: vec![
+                    SectionInput { id: None, name: "Intro".into(), start_bar: 1 },
+                    SectionInput { id: None, name: "Bridge".into(), start_bar: 57 },
+                ],
+            })
+            .unwrap();
+
+        let result = preview(&state, "set Bridge to bar 65 in Goodness of God")
+            .await
+            .unwrap();
+        assert_eq!(result["kind"], "move_section");
+
+        let song = state.db.list_songs().unwrap().remove(0);
+        let bridge = song.sections.iter().find(|section| section.name == "Bridge").unwrap();
+        assert_eq!(bridge.start_bar, 57);
+    }
+
     #[test]
     fn parses_repeat_and_bar_suffixes_in_either_order() {
         let (sections_a, length_a) =
