@@ -482,6 +482,21 @@ async fn run_system_check(state: State<'_, AppState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
+fn reveal_service_build(path: String) -> Result<(), String> {
+    let root = service_builder::default_root().join("Services");
+    let root_canonical = fs::canonicalize(&root).map_err(|e| e.to_string())?;
+    let target = fs::canonicalize(PathBuf::from(&path)).map_err(|e| e.to_string())?;
+    if !target.starts_with(&root_canonical) {
+        return Err("That folder is outside the Luma Live Services library".into());
+    }
+    std::process::Command::new("open")
+        .arg(&target)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn reveal_library_root() -> Result<String, String> {
     let root = service_builder::default_root();
     service_builder::ensure_layout(&root)?;
@@ -754,6 +769,7 @@ fn main() {
             preview_plain_command,
             run_plain_command,
             reveal_library_root,
+            reveal_service_build,
             get_song_package_statuses,
             rescan_song_package,
             reveal_song_package,
