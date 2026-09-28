@@ -299,11 +299,13 @@
 
   async function jumpAdjacentSection(direction) {
     const ctx = state.live && state.live.liveContext;
-    const placement = currentPlacement();
+    const arrangement = state.arrangement;
+    const placement = currentPlacement() || (arrangement && arrangement.songs && arrangement.songs[0]) || null;
     if (!placement) return;
     const sections = placement.sections || [];
     let index = ctx && ctx.sectionId ? sections.findIndex(section => section.id === ctx.sectionId) : -1;
     if (direction > 0 && index < 0) index = -1;
+    if (direction < 0 && index < 0) return;
     const target = sections[index + direction];
     if (target) await jumpTo(placement, target.id);
   }
@@ -366,22 +368,39 @@
 
   function renderArrangement() {
     const ctx = state.live && state.live.liveContext;
-    const placement = currentPlacement();
     const arrangement = state.arrangement;
+    const firstPlacement = arrangement && arrangement.songs && arrangement.songs[0] ? arrangement.songs[0] : null;
+    const placement = currentPlacement() || firstPlacement;
     const sections = placement ? placement.sections || [] : [];
 
-    if (!ctx || !placement) {
-      $("currentSong").textContent = state.activeSetlistId ? "Waiting for playhead" : "No service loaded";
-      $("songMeta").textContent = state.activeSetlistId
-        ? "Move Ableton into a synced song or choose a song below."
-        : "Load a setlist from the Mac app to enable song sections.";
-      $("songPosition").textContent = "—";
-      $("currentSection").textContent = "—";
-      $("nextSection").textContent = "—";
-      $("previousSectionBtn").disabled = true;
-      $("nextSectionBtn").disabled = !sections.length;
-      $("previousSongBtn").disabled = true;
-      $("nextSongBtn").disabled = !(arrangement && arrangement.songs && arrangement.songs.length);
+    if (!ctx || !currentPlacement()) {
+      if (placement) {
+        $("currentSong").textContent = placement.title;
+        $("songMeta").textContent = [
+          "READY",
+          placement.bpm ? placement.bpm + " BPM" : null,
+          placement.key || null,
+          placement.meter ? placement.meter.numerator + "/" + placement.meter.denominator : null,
+          "Tap any section to move Ableton"
+        ].filter(Boolean).join(" · ");
+        $("songPosition").textContent = arrangement ? "Song 1 / " + arrangement.songs.length : "—";
+        $("currentSection").textContent = "READY";
+        $("nextSection").textContent = sections[0] ? sections[0].name : "—";
+        $("previousSectionBtn").disabled = true;
+        $("nextSectionBtn").disabled = sections.length === 0;
+        $("previousSongBtn").disabled = true;
+        $("nextSongBtn").disabled = !(arrangement && arrangement.songs && arrangement.songs.length);
+      } else {
+        $("currentSong").textContent = "No service loaded";
+        $("songMeta").textContent = "Choose a saved service above to enable song and section control.";
+        $("songPosition").textContent = "—";
+        $("currentSection").textContent = "—";
+        $("nextSection").textContent = "—";
+        $("previousSectionBtn").disabled = true;
+        $("nextSectionBtn").disabled = true;
+        $("previousSongBtn").disabled = true;
+        $("nextSongBtn").disabled = true;
+      }
     } else {
       $("currentSong").textContent = ctx.songTitle;
       $("songMeta").textContent = [
