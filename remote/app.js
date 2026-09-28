@@ -454,7 +454,9 @@
       if (data.library) setLibrary(data.library);
       else await refreshLibrary();
       document.querySelector('[data-tab="song"]').click();
-      showNotice("Setlist synced to Ableton.");
+      showNotice(data.syncError
+        ? "Setlist loaded locally. Ableton sync is pending."
+        : "Setlist synced to Ableton.");
     } catch (error) {
       showError(error.message);
     }
