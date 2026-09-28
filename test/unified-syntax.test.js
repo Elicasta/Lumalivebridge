@@ -92,3 +92,21 @@ test("desktop recurring poll does not recursively rescan song packages", () => {
   const libraryFn = js.slice(libraryStart, packageStart);
   assert.doesNotMatch(libraryFn, /get_song_package_statuses/);
 });
+
+
+test("desktop Busk keeps transport and per-track mixer controls", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "app", "index.html"), "utf8");
+  const js = fs.readFileSync(path.join(__dirname, "..", "app", "app.js"), "utf8");
+
+  assert.match(html, /id="desktopBuskSync"/);
+  assert.match(html, /id="desktopBuskClick"/);
+  assert.match(html, /id="desktopBuskPlay"/);
+  assert.match(html, /id="desktopBuskStop"/);
+  assert.match(html, /id="desktopStopAll"/);
+
+  assert.match(js, /busk-mini-toggle mute/);
+  assert.match(js, /busk-mini-toggle solo/);
+  assert.match(js, /set_track_mute/);
+  assert.match(js, /set_track_solo/);
+  assert.match(js, /clip\.color/);
+});
