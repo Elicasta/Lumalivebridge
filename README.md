@@ -238,3 +238,61 @@ Also not implemented yet:
 - cloud sync
 
 Current section jumps are immediate transport jumps. Luma does not pretend they are musically quantized yet.
+
+
+## Portable song packages and service builds
+
+Luma Live keeps reusable song media outside the SQLite database under:
+
+```text
+~/Music/Luma Live/
+├── Library/
+│   ├── Songs/
+│   │   └── <song-id>/
+│   │       ├── <Song Name>.als
+│   │       ├── song.json
+│   │       ├── Audio/
+│   │       ├── Cues/
+│   │       └── Exports/
+│   └── _Incoming/
+├── Services/
+│   └── <service name>/
+│       └── build-<timestamp>/
+│           ├── service.json
+│           ├── <Service Name>.als
+│           └── Songs/
+├── Templates/
+│   ├── Church Standard.als
+│   ├── TRACKS.txt
+│   └── Busk/
+├── Backups/
+└── Cache/
+```
+
+Saving a song in Luma Live scaffolds its package folder. Commonly named stems such as Click,
+Guide, Drums, Bass, Keys, Guitar, and BGV are mapped to the standard Ableton tracks. A service
+build collects copies of the song packages into a timestamped snapshot so a future library edit
+does not silently change an already prepared service.
+
+The service manifest stores absolute song/section timing, collected stems, song-specific cue
+assets, and transition metadata. When the current Max adapter is connected, Luma can clear its
+own prior Arrangement clips, create required tracks, place collected stems at their calculated
+song starts, create Lighting/MIDI cue clips, and sync LL locators.
+
+### Service transitions
+
+Each setlist item owns the transition after that song:
+
+- **Default Gap** uses the setlist-wide gap.
+- **Gap** adds an explicit number of silent bars.
+- **Segue** starts the next song on the exact next downbeat with no gap.
+- **Hold** stops at the song boundary and parks playback at the next song, with a silent guard bar.
+- **Vamp** loops a selected song section until the operator releases it by navigating onward.
+- **Mashup** overlaps the next song by a chosen number of bars.
+
+Mashup overlap currently requires matching BPM and meter. Different-tempo overlaps should be
+warped or pre-rendered before building so one global Ableton transport tempo never has two
+conflicting requirements.
+
+Timing is stored in Ableton quarter-note beat units. Section bar positions are converted using
+the song's time-signature denominator, so meters such as 6/8 retain correct local bar/beat math.
