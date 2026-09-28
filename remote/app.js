@@ -275,10 +275,15 @@
       });
       if (data.state) state.live = data.state;
       renderAll();
-      const ctx = state.live.liveContext;
-      if (sectionId && (!ctx || ctx.sectionId !== sectionId)) {
-        await new Promise(resolve => setTimeout(resolve, 120));
-        await refreshState();
+      if (sectionId && state.live && state.live.queuedJump) {
+        const section = (song.sections || []).find(item => item.id === sectionId);
+        showNotice("Queued " + (section ? section.name : "section") + " for the next bar.");
+      } else {
+        const ctx = state.live.liveContext;
+        if (sectionId && (!ctx || ctx.sectionId !== sectionId)) {
+          await new Promise(resolve => setTimeout(resolve, 120));
+          await refreshState();
+        }
       }
     } catch (error) {
       showError(error.message);
