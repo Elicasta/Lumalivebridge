@@ -6,6 +6,7 @@ mod lan;
 mod migration;
 mod models;
 mod pairing;
+mod service_builder;
 mod state;
 
 use crate::arrangement::{build_arrangement, jump_target, locate_position, Arrangement};
@@ -83,7 +84,12 @@ fn get_library(state: State<'_, AppState>) -> Result<LibraryPayload, String> {
 
 #[tauri::command]
 fn save_song(state: State<'_, AppState>, song: SongInput) -> Result<Song, String> {
-    state.db.save_song(song)
+    let saved = state.db.save_song(song)?;
+    let root = service_builder::default_root();
+    if let Err(error) = service_builder::ensure_song_package(&root, &saved) {
+        append_diagnostic(&format!("song package scaffold skipped for {}: {}", saved.title, error));
+    }
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -269,6 +275,116 @@ async fn run_plain_command(state: State<'_, AppState>, text: String) -> Result<V
     }))
 }
 
+#[tauri::command]
+fn reveal_library_root() -> Result<String, String> {
+    let root = service_builder::default_root();
+    service_builder::ensure_layout(&root)?;
+    std::process::Command::new("open")
+        .arg(&root)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(root.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn build_service(
+    state: State<'_, AppState>,
+    id: String,
+    build_ableton: bool,
+) -> Result<Value, String> {
+    let state = state.inner().clone();
+    let setlist = state
+        .db
+        .get_setlist(&id)?
+        .ok_or_else(|| "Setlist not found".to_string())?;
+    let songs = state.db.list_songs()?;
+    let arrangement = build_arrangement(&setlist, &songs)?;
+    let root = service_builder::default_root();
+    let result = service_builder::build_service_folder(
+        &root,
+        &setlist,
+        &songs,
+        arrangement.clone(),
+    )?;
+
+    state.db.set_active_setlist_id(Some(&setlist.id))?;
+
+    let mut ableton_built = false;
+    let mut ableton_error: Option<String> = None;
+
+    if build_ableton {
+        let build_result: Result<(), String> = async {
+            bridge::send("clear_luma_arrangement", json!({})).await?;
+
+            let mut ensured = std::collections::HashSet::new();
+            for placement in &result.audio {
+                if ensured.insert(placement.track.clone()) {
+                    bridge::send(
+                        "ensure_track",
+                        json!({ "kind": "audio", "name": placement.track }),
+                    )
+                    .await?;
+                }
+            }
+            bridge::send("ensure_track", json!({ "kind": "midi", "name": "LIGHTING" })).await?;
+            bridge::send("ensure_track", json!({ "kind": "midi", "name": "MIDI / CUES" })).await?;
+
+            let points: Vec<Value> = arrangement
+                .markers
+                .iter()
+                .map(|point| json!({ "time": point.time, "name": point.name }))
+                .collect();
+            bridge::send(
+                "sync_cue_points",
+                json!({ "replace": true, "points": points }),
+            )
+            .await?;
+
+            for placement in &result.audio {
+                bridge::send(
+                    "create_arrangement_audio_clip",
+                    json!({
+                        "track": { "name": placement.track },
+                        "filePath": placement.collected_path,
+                        "position": placement.start_beat,
+                        "name": placement.clip_name
+                    }),
+                )
+                .await?;
+            }
+
+            if let Some(first) = arrangement.songs.first() {
+                bridge::send("set_tempo", json!({ "bpm": first.bpm })).await?;
+                bridge::send(
+                    "set_meter",
+                    json!({
+                        "numerator": first.meter.numerator,
+                        "denominator": first.meter.denominator
+                    }),
+                )
+                .await?;
+                bridge::jump_to_time(first.start_beat).await?;
+            }
+
+            Ok(())
+        }
+        .await;
+
+        match build_result {
+            Ok(()) => ableton_built = true,
+            Err(error) => ableton_error = Some(error),
+        }
+    }
+
+    Ok(json!({
+        "ok": true,
+        "service": result,
+        "arrangement": arrangement,
+        "abletonBuilt": ableton_built,
+        "abletonError": ableton_error
+    }))
+}
+
 fn main() {
     install_panic_logger();
     append_diagnostic("Luma Live starting");
@@ -315,12 +431,21 @@ fn main() {
                 Err(error) => append_diagnostic(&format!("legacy migration skipped: {error}")),
             }
 
+            let library_root = service_builder::default_root();
+            if let Err(error) = service_builder::ensure_layout(&library_root) {
+                append_diagnostic(&format!("library folder scaffold failed: {error}"));
+                startup_warning = Some(format!(
+                    "Luma Live opened, but the media library folder could not be prepared ({error})."
+                ));
+            }
+
             let token = Arc::new(load_or_create_token(&app_dir));
             let runtime = Arc::new(RwLock::new(RuntimeInfo {
                 server_running: false,
                 port: None,
                 local_urls: Vec::new(),
                 database_path: db_path.to_string_lossy().to_string(),
+                library_root: library_root.to_string_lossy().to_string(),
                 offline_ready: true,
                 startup_warning,
             }));
@@ -367,7 +492,9 @@ fn main() {
             sync_live_setlist,
             jump_live,
             preview_plain_command,
-            run_plain_command
+            run_plain_command,
+            reveal_library_root,
+            build_service
         ])
         .run(context);
 
