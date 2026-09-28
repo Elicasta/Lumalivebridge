@@ -450,3 +450,93 @@ footer {
   .mute { grid-area: mute; }
   .solo { grid-area: solo; }
 }
+
+
+/* Six-digit local pairing */
+.pairing-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: max(22px, env(safe-area-inset-top)) 18px max(22px, env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at 50% 22%, rgba(255,255,255,.07), transparent 26rem),
+    rgba(8,9,11,.98);
+  backdrop-filter: blur(24px);
+}
+.pairing-screen[hidden] { display: none; }
+.pairing-locked {
+  pointer-events: none;
+  user-select: none;
+  filter: blur(7px);
+  opacity: .28;
+}
+.pairing-card {
+  width: min(460px, 100%);
+  border: 1px solid #30343a;
+  border-radius: 22px;
+  padding: 28px;
+  background: #141619;
+  box-shadow: 0 30px 90px rgba(0,0,0,.48);
+  text-align: center;
+}
+.pairing-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 28px;
+  color: #aeb3ba;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .14em;
+}
+.pairing-card h2 { margin-top: 8px; font-size: 31px; }
+.pairing-card p {
+  width: min(340px,100%);
+  margin: 10px auto 0;
+  color: #8d939b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pairing-code-input {
+  width: 100%;
+  margin-top: 24px;
+  border: 1px solid #3d4249;
+  border-radius: 15px;
+  padding: 15px 12px;
+  background: #0d0f11;
+  color: #fff;
+  text-align: center;
+  font-size: clamp(32px,9vw,48px);
+  font-weight: 800;
+  letter-spacing: .32em;
+  text-indent: .32em;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.pairing-code-input:focus {
+  border-color: #868d96;
+  box-shadow: 0 0 0 4px rgba(255,255,255,.045);
+}
+.pairing-connect {
+  width: 100%;
+  min-height: 50px;
+  margin-top: 10px;
+}
+.pairing-error {
+  margin-top: 10px;
+  border: 1px solid #65373d;
+  border-radius: 10px;
+  padding: 9px 10px;
+  color: #ffc0c5;
+  background: #32191d;
+  font-size: 11px;
+}
+.pairing-card > small {
+  display: block;
+  margin-top: 15px;
+  color: #646a72;
+  font-size: 9px;
+  line-height: 1.5;
+}
