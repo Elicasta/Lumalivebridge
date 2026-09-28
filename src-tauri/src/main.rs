@@ -541,9 +541,8 @@ async fn build_service(
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
-            let has_builder = capabilities.iter().any(|value| value.as_str() == Some("arrangement-audio"));
-            let has_transpose = capabilities.iter().any(|value| value.as_str() == Some("transpose"));
-            if !has_builder || !has_transpose {
+            let has = |name: &str| capabilities.iter().any(|value| value.as_str() == Some(name));
+            if !has("arrangement-audio") || !has("transpose") || !has("bulk-build") {
                 let version = health
                     .get("version")
                     .and_then(Value::as_str)
@@ -553,101 +552,115 @@ async fn build_service(
                     version
                 ));
             }
-            bridge::send("clear_luma_arrangement", json!({})).await?;
 
-            let mut ensured = std::collections::HashSet::new();
-            for placement in &result.audio {
-                if ensured.insert(placement.track.clone()) {
+            bridge::send("begin_bulk_update", json!({})).await?;
+            let write_result: Result<(), String> = async {
+                bridge::send("clear_luma_arrangement", json!({})).await?;
+
+                let mut ensured = std::collections::HashSet::new();
+                for placement in &result.audio {
+                    if ensured.insert(placement.track.clone()) {
+                        bridge::send(
+                            "ensure_track",
+                            json!({ "kind": "audio", "name": placement.track }),
+                        )
+                        .await?;
+                    }
+                }
+                bridge::send("ensure_track", json!({ "kind": "midi", "name": "LIGHTING" })).await?;
+                bridge::send("ensure_track", json!({ "kind": "midi", "name": "MIDI / CUES" })).await?;
+
+                let points: Vec<Value> = arrangement
+                    .markers
+                    .iter()
+                    .map(|point| json!({ "time": point.time, "name": point.name }))
+                    .collect();
+                bridge::send(
+                    "sync_cue_points",
+                    json!({ "replace": true, "points": points }),
+                )
+                .await?;
+
+                let timeline = json!({
+                    "songs": arrangement.songs.iter().map(|song| json!({
+                        "instanceId": &song.instance_id,
+                        "startBeat": song.start_beat,
+                        "endBeat": song.end_beat,
+                        "bpm": song.bpm,
+                        "numerator": song.meter.numerator,
+                        "denominator": song.meter.denominator
+                    })).collect::<Vec<_>>(),
+                    "transitions": &arrangement.transitions
+                });
+                bridge::send("configure_service_timeline", timeline).await?;
+
+                for placement in &result.audio {
                     bridge::send(
-                        "ensure_track",
-                        json!({ "kind": "audio", "name": placement.track }),
+                        "create_arrangement_audio_clip",
+                        json!({
+                            "track": { "name": placement.track },
+                            "filePath": placement.collected_path,
+                            "position": placement.start_beat,
+                            "name": placement.clip_name,
+                            "transposeSemitones": placement.transpose_semitones
+                        }),
                     )
                     .await?;
                 }
+
+                for cue in &result.cues {
+                    let track = if cue.kind.to_lowercase().contains("light") {
+                        "LIGHTING"
+                    } else {
+                        "MIDI / CUES"
+                    };
+                    let file_name = std::path::Path::new(&cue.collected_path)
+                        .file_name()
+                        .and_then(|value| value.to_str())
+                        .unwrap_or("cue");
+                    bridge::send(
+                        "create_arrangement_midi_clip",
+                        json!({
+                            "track": { "name": track },
+                            "position": cue.beat,
+                            "lengthBeats": 0.25,
+                            "name": format!("LL|CUE|{}|{}", cue.kind.to_uppercase(), file_name)
+                        }),
+                    )
+                    .await?;
+                }
+
+                if let Some(first) = arrangement.songs.first() {
+                    bridge::send("set_tempo", json!({ "bpm": first.bpm })).await?;
+                    bridge::send(
+                        "set_meter",
+                        json!({
+                            "numerator": first.meter.numerator,
+                            "denominator": first.meter.denominator
+                        }),
+                    )
+                    .await?;
+                    bridge::jump_to_time(first.start_beat).await?;
+                }
+
+                Ok(())
             }
-            bridge::send("ensure_track", json!({ "kind": "midi", "name": "LIGHTING" })).await?;
-            bridge::send("ensure_track", json!({ "kind": "midi", "name": "MIDI / CUES" })).await?;
+            .await;
 
-            let points: Vec<Value> = arrangement
-                .markers
-                .iter()
-                .map(|point| json!({ "time": point.time, "name": point.name }))
-                .collect();
-            bridge::send(
-                "sync_cue_points",
-                json!({ "replace": true, "points": points }),
-            )
-            .await?;
-
-            let timeline = json!({
-                "songs": arrangement.songs.iter().map(|song| json!({
-                    "instanceId": &song.instance_id,
-                    "startBeat": song.start_beat,
-                    "endBeat": song.end_beat,
-                    "bpm": song.bpm,
-                    "numerator": song.meter.numerator,
-                    "denominator": song.meter.denominator
-                })).collect::<Vec<_>>(),
-                "transitions": &arrangement.transitions
-            });
-            bridge::send("configure_service_timeline", timeline).await?;
-
-            for placement in &result.audio {
-                bridge::send(
-                    "create_arrangement_audio_clip",
-                    json!({
-                        "track": { "name": placement.track },
-                        "filePath": placement.collected_path,
-                        "position": placement.start_beat,
-                        "name": placement.clip_name,
-                        "transposeSemitones": placement.transpose_semitones
-                    }),
-                )
-                .await?;
-            }
-
-            for cue in &result.cues {
-                let track = if cue.kind.to_lowercase().contains("light") {
-                    "LIGHTING"
-                } else {
-                    "MIDI / CUES"
-                };
-                let file_name = std::path::Path::new(&cue.collected_path)
-                    .file_name()
-                    .and_then(|value| value.to_str())
-                    .unwrap_or("cue");
-                bridge::send(
-                    "create_arrangement_midi_clip",
-                    json!({
-                        "track": { "name": track },
-                        "position": cue.beat,
-                        "lengthBeats": 0.25,
-                        "name": format!("LL|CUE|{}|{}", cue.kind.to_uppercase(), file_name)
-                    }),
-                )
-                .await?;
-            }
-
-            if let Some(first) = arrangement.songs.first() {
-                bridge::send("set_tempo", json!({ "bpm": first.bpm })).await?;
-                bridge::send(
-                    "set_meter",
-                    json!({
-                        "numerator": first.meter.numerator,
-                        "denominator": first.meter.denominator
-                    }),
-                )
-                .await?;
-                bridge::jump_to_time(first.start_beat).await?;
-            }
-
+            let finish_result = bridge::send("end_bulk_update", json!({})).await;
+            write_result?;
+            finish_result?;
             Ok(())
         }
         .await;
 
         match build_result {
             Ok(()) => ableton_built = true,
-            Err(error) => ableton_error = Some(error),
+            Err(error) => {
+                // Best effort: never leave an adapter in bulk mode after a failed write.
+                let _ = bridge::send("end_bulk_update", json!({})).await;
+                ableton_error = Some(error);
+            }
         }
     }
 
