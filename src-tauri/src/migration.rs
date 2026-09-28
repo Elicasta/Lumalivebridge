@@ -160,6 +160,7 @@ fn import_single_file_library(db: &Database, root: &Path) -> Result<usize, Strin
                             Some(SetlistItemInput {
                                 id: item.get("id").and_then(Value::as_str).map(ToString::to_string),
                                 song_id: song_id.to_string(),
+                                transition: Default::default(),
                             })
                         })
                         .collect::<Vec<_>>()
