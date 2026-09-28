@@ -732,6 +732,7 @@ mod tests {
                 id: "instance-a".into(),
                 song_id: song.id.clone(),
                 transition: TransitionSpec::default(),
+                transpose_semitones: 0,
             }],
             updated_at: 0,
         };
@@ -750,4 +751,79 @@ mod tests {
 
         fs::remove_dir_all(root).ok();
     }
+
+    #[test]
+    fn detects_nested_original_stems_and_project_als() {
+        let root = temp_root();
+        let song = Song {
+            id: "nested-song".into(),
+            title: "Nested Song".into(),
+            artist: String::new(),
+            bpm: 78.0,
+            key: "F".into(),
+            meter: Meter { numerator: 4, denominator: 4 },
+            length_bars: 16,
+            sections: vec![Section { id: "intro".into(), name: "Intro".into(), start_bar: 1 }],
+            updated_at: 0,
+        };
+
+        let package = ensure_song_package(&root, &song).unwrap();
+        let project = package.join("Project").join("Nested Song Project");
+        std::fs::create_dir_all(project.join("Ableton Project Info")).unwrap();
+        std::fs::write(project.join("Nested Song.als"), b"als").unwrap();
+        let original = package.join("Audio").join("Original");
+        std::fs::create_dir_all(&original).unwrap();
+        std::fs::write(original.join("Drums.wav"), b"audio").unwrap();
+        std::fs::write(original.join("Bass.wav"), b"audio").unwrap();
+
+        let status = package_status(&root, &song).unwrap();
+        assert!(status.project_attached);
+        assert!(status.source_als.as_deref().unwrap().ends_with("Nested Song.als"));
+        assert_eq!(status.stem_count, 2);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn transposable_stems_receive_service_key_shift() {
+        let root = temp_root();
+        ensure_layout(&root).unwrap();
+        let song = Song {
+            id: "shift-song".into(),
+            title: "Shift Song".into(),
+            artist: String::new(),
+            bpm: 80.0,
+            key: "E".into(),
+            meter: Meter { numerator: 4, denominator: 4 },
+            length_bars: 8,
+            sections: vec![Section { id: "intro".into(), name: "Intro".into(), start_bar: 1 }],
+            updated_at: 0,
+        };
+        let package = ensure_song_package(&root, &song).unwrap();
+        let audio = package.join("Audio").join("Original");
+        std::fs::write(audio.join("Bass.wav"), b"audio").unwrap();
+        std::fs::write(audio.join("Click.wav"), b"audio").unwrap();
+
+        let setlist = Setlist {
+            id: "service".into(),
+            title: "Sunday".into(),
+            gap_bars: 0,
+            items: vec![SetlistItem {
+                id: "instance".into(),
+                song_id: song.id.clone(),
+                transition: TransitionSpec::default(),
+                transpose_semitones: 2,
+            }],
+            updated_at: 0,
+        };
+        let arrangement = build_arrangement(&setlist, &[song.clone()]).unwrap();
+        let result = build_service_folder(&root, &setlist, &[song], arrangement).unwrap();
+        let bass = result.audio.iter().find(|item| item.role == "bass").unwrap();
+        let click = result.audio.iter().find(|item| item.role == "click").unwrap();
+        assert_eq!(bass.transpose_semitones, 2);
+        assert_eq!(click.transpose_semitones, 0);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
 }
