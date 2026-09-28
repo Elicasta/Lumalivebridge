@@ -202,7 +202,23 @@ async fn sync_live_setlist(state: State<'_, AppState>, id: String) -> Result<Val
         .collect();
 
     state.db.set_active_setlist_id(Some(&setlist.id))?;
-    let sync_result = bridge::send("sync_cue_points", json!({ "replace": true, "points": points })).await;
+    let timeline = json!({
+        "songs": arrangement.songs.iter().map(|song| json!({
+            "instanceId": song.instance_id,
+            "startBeat": song.start_beat,
+            "endBeat": song.end_beat,
+            "bpm": song.bpm,
+            "numerator": song.meter.numerator,
+            "denominator": song.meter.denominator
+        })).collect::<Vec<_>>(),
+        "transitions": arrangement.transitions
+    });
+    let sync_result = async {
+        bridge::send("sync_cue_points", json!({ "replace": true, "points": points })).await?;
+        bridge::send("configure_service_timeline", timeline).await?;
+        Ok::<(), String>(())
+    }
+    .await;
     let bridge_connected = sync_result.is_ok();
     let sync_error = sync_result.err();
 
@@ -246,7 +262,7 @@ async fn jump_live(
         }),
     )
     .await?;
-    bridge::send("jump_to_time", json!({ "time": time })).await?;
+    bridge::jump_to_time(time).await?;
     enriched_live_state(&state).await
 }
 
@@ -339,6 +355,19 @@ async fn build_service(
                 json!({ "replace": true, "points": points }),
             )
             .await?;
+
+            let timeline = json!({
+                "songs": arrangement.songs.iter().map(|song| json!({
+                    "instanceId": song.instance_id,
+                    "startBeat": song.start_beat,
+                    "endBeat": song.end_beat,
+                    "bpm": song.bpm,
+                    "numerator": song.meter.numerator,
+                    "denominator": song.meter.denominator
+                })).collect::<Vec<_>>(),
+                "transitions": arrangement.transitions
+            });
+            bridge::send("configure_service_timeline", timeline).await?;
 
             for placement in &result.audio {
                 bridge::send(
