@@ -198,6 +198,16 @@ async fn get_arrangement_overview() -> Result<Value, String> {
 }
 
 #[tauri::command]
+async fn get_session_overview() -> Result<Value, String> {
+    let response = bridge::send("get_session_overview", json!({})).await?;
+    Ok(response
+        .get("result")
+        .and_then(|value| value.get("session"))
+        .cloned()
+        .unwrap_or_else(|| json!({ "tracks": [], "scenes": [], "selectedClip": Value::Null })))
+}
+
+#[tauri::command]
 async fn sync_live_setlist(state: State<'_, AppState>, id: String) -> Result<Value, String> {
     let state = state.inner().clone();
     let setlist = state
@@ -1027,6 +1037,7 @@ fn main() {
             get_live_state,
             direct_live_command,
             get_arrangement_overview,
+            get_session_overview,
             sync_live_setlist,
             jump_live,
             preview_plain_command,
