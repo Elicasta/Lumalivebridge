@@ -2046,12 +2046,37 @@
     });
   });
 
+  $("liveLibrarySearch").addEventListener("input", (event) => {
+    state.liveLibraryQuery = event.target.value || "";
+    renderLibraryRail();
+  });
+
+  $("timelineFit").addEventListener("click", () => {
+    state.timelineFollow = false;
+    $("timelineFollow").classList.remove("active");
+    renderArrangementTimeline();
+  });
+
+  $("timelineFollow").addEventListener("click", () => {
+    state.timelineFollow = !state.timelineFollow;
+    $("timelineFollow").classList.toggle("active", state.timelineFollow);
+    renderArrangementTimeline();
+  });
+
+  go("live");
   resetSongEditor();
   resetSetlistEditor();
 
-  Promise.all([loadLibrary(), loadPackageStatuses(), loadRuntime(), loadLive(), loadPairingCode()]).catch((error) => showError(error));
+  Promise.all([loadLibrary(), loadPackageStatuses(), loadRuntime(), loadLive(), loadPairingCode()])
+    .then(() => loadArrangementOverview().catch(() => {}))
+    .catch((error) => showError(error));
   setInterval(() => loadRuntime().catch(() => {}), 2500);
   setInterval(() => loadLive().catch(() => {}), 750);
+  // Arrangement clip enumeration is intentionally slower than transport polling.
+  // Live controls stay responsive while the visual timeline refreshes in the background.
+  setInterval(() => {
+    if (document.body.dataset.page === "live") loadArrangementOverview().catch(() => {});
+  }, 3000);
   // The iPad plain-language surface can mutate the same SQLite library.
   // Refresh the desktop lists without requiring a relaunch.
   setInterval(() => loadLibrary().catch(() => {}), 4000);
