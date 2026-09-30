@@ -282,13 +282,151 @@ function trackState() {
       index: i,
       number: i + 1,
       name: String(getProp(track, "name") || "Track " + (i + 1)),
+      color: Number(safeProp(track, "color", 0)) || 0,
       mute: Number(getProp(track, "mute")) === 1,
       solo: Number(getProp(track, "solo")) === 1,
       volume: Number(getProp(live("live_set tracks " + i + " mixer_device volume"), "value")),
-      playingSlotIndex: Number(getProp(track, "playing_slot_index"))
+      meterLevel: Number(safeProp(track, "output_meter_level", 0)) || 0,
+      playingSlotIndex: Number(getProp(track, "playing_slot_index")),
+      firedSlotIndex: Number(safeProp(track, "fired_slot_index", -1))
     });
   }
   return tracks;
+}
+
+function highlightedSlotInfo() {
+  var highlighted;
+  try {
+    highlighted = live("live_set view highlighted_clip_slot");
+  } catch (_) {
+    return null;
+  }
+
+  var highlightedId = Number(highlighted.id) || 0;
+  if (!highlightedId) return null;
+
+  var sceneCount = count("scenes");
+  var trackCount = count("tracks");
+  for (var trackIndex = 0; trackIndex < trackCount; trackIndex++) {
+    for (var sceneIndex = 0; sceneIndex < sceneCount; sceneIndex++) {
+      var slot = live("live_set tracks " + trackIndex + " clip_slots " + sceneIndex);
+      if ((Number(slot.id) || 0) !== highlightedId) continue;
+
+      var hasClip = Number(safeProp(slot, "has_clip", 0)) === 1;
+      var detail = {
+        trackIndex: trackIndex,
+        sceneIndex: sceneIndex,
+        hasClip: hasClip,
+        slotId: highlightedId
+      };
+      if (hasClip) {
+        var clip = live("live_set tracks " + trackIndex + " clip_slots " + sceneIndex + " clip");
+        detail.clipId = Number(clip.id) || 0;
+        detail.name = String(safeProp(clip, "name", "") || "");
+        detail.color = Number(safeProp(clip, "color", 0)) || 0;
+        detail.isMidiClip = Number(safeProp(clip, "is_midi_clip", 0)) === 1;
+        detail.isAudioClip = Number(safeProp(clip, "is_audio_clip", 0)) === 1;
+        detail.isPlaying = Number(safeProp(clip, "is_playing", 0)) === 1;
+        detail.isRecording = Number(safeProp(clip, "is_recording", 0)) === 1;
+      }
+      return detail;
+    }
+  }
+  return null;
+}
+
+function sessionOverview() {
+  var set = live("live_set");
+  var sceneCount = count("scenes");
+  var trackCount = count("tracks");
+  var selected = highlightedSlotInfo();
+  var scenes = [];
+  var tracks = [];
+
+  for (var sceneIndex = 0; sceneIndex < sceneCount; sceneIndex++) {
+    var scene = live("live_set scenes " + sceneIndex);
+    scenes.push({
+      index: sceneIndex,
+      number: sceneIndex + 1,
+      name: String(safeProp(scene, "name", "Scene " + (sceneIndex + 1)) || ("Scene " + (sceneIndex + 1))),
+      color: Number(safeProp(scene, "color", 0)) || 0,
+      isTriggered: Number(safeProp(scene, "is_triggered", 0)) === 1,
+      tempoEnabled: Number(safeProp(scene, "tempo_enabled", 0)) === 1,
+      tempo: Number(safeProp(scene, "tempo", 0)) || 0
+    });
+  }
+
+  for (var trackIndex = 0; trackIndex < trackCount; trackIndex++) {
+    var track = live("live_set tracks " + trackIndex);
+    var clips = [];
+    for (var slotIndex = 0; slotIndex < sceneCount; slotIndex++) {
+      var slot = live("live_set tracks " + trackIndex + " clip_slots " + slotIndex);
+      var hasClip = Number(safeProp(slot, "has_clip", 0)) === 1;
+      var clipState = {
+        sceneIndex: slotIndex,
+        hasClip: hasClip
+      };
+      if (hasClip) {
+        var clip = live("live_set tracks " + trackIndex + " clip_slots " + slotIndex + " clip");
+        clipState.name = String(safeProp(clip, "name", "") || "");
+        clipState.color = Number(safeProp(clip, "color", 0)) || 0;
+        clipState.isPlaying = Number(safeProp(clip, "is_playing", 0)) === 1;
+        clipState.isTriggered = Number(safeProp(clip, "is_triggered", 0)) === 1;
+        clipState.isRecording = Number(safeProp(clip, "is_recording", 0)) === 1;
+        clipState.isMidiClip = Number(safeProp(clip, "is_midi_clip", 0)) === 1;
+      }
+      clips.push(clipState);
+    }
+
+    tracks.push({
+      index: trackIndex,
+      number: trackIndex + 1,
+      name: String(safeProp(track, "name", "Track " + (trackIndex + 1)) || ("Track " + (trackIndex + 1))),
+      color: Number(safeProp(track, "color", 0)) || 0,
+      playingSlotIndex: Number(safeProp(track, "playing_slot_index", -1)),
+      firedSlotIndex: Number(safeProp(track, "fired_slot_index", -1)),
+      mute: Number(safeProp(track, "mute", 0)) === 1,
+      solo: Number(safeProp(track, "solo", 0)) === 1,
+      volume: Number(safeProp(live("live_set tracks " + trackIndex + " mixer_device volume"), "value", 0.85)),
+      meterLevel: Number(safeProp(track, "output_meter_level", 0)) || 0,
+      clips: clips
+    });
+  }
+
+  return {
+    tempo: Number(safeProp(set, "tempo", 120)),
+    scenes: scenes,
+    tracks: tracks,
+    selectedClip: selected
+  };
+}
+
+function activeSessionSceneIndex() {
+  var trackCount = count("tracks");
+  for (var i = 0; i < trackCount; i++) {
+    var index = Number(safeProp(live("live_set tracks " + i), "playing_slot_index", -1));
+    if (index >= 0) return index;
+  }
+
+  try {
+    var selectedScene = live("live_set view selected_scene");
+    var selectedId = Number(selectedScene.id) || 0;
+    var sceneCount = count("scenes");
+    for (var sceneIndex = 0; sceneIndex < sceneCount; sceneIndex++) {
+      if ((Number(live("live_set scenes " + sceneIndex).id) || 0) === selectedId) return sceneIndex;
+    }
+  } catch (_) {}
+
+  return 0;
+}
+
+function fireAdjacentScene(delta) {
+  var total = count("scenes");
+  if (!total) throw new Error("No Session scenes are available");
+  var current = activeSessionSceneIndex();
+  var target = Math.max(0, Math.min(total - 1, current + Number(delta)));
+  live("live_set scenes " + target).call("fire");
+  return { sceneIndex: target };
 }
 
 function snapshot() {
@@ -312,6 +450,11 @@ function snapshot() {
     isPlaying: Number(getProp(set, "is_playing")) === 1,
     metronome: Number(getProp(set, "metronome")) === 1,
     currentSongTime: Number(getProp(set, "current_song_time")),
+    sessionRecord: Number(safeProp(set, "session_record", 0)) === 1,
+    swingAmount: Number(safeProp(set, "swing_amount", 0)) || 0,
+    canCaptureMidi: Number(safeProp(set, "can_capture_midi", 0)) === 1,
+    canUndo: Number(safeProp(set, "can_undo", 0)) === 1,
+    canRedo: Number(safeProp(set, "can_redo", 0)) === 1,
     activeSceneIndex: activeScene,
     scenes: sceneState(),
     tracks: tracks
