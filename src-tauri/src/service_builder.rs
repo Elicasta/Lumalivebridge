@@ -61,6 +61,7 @@ pub struct ServiceAudioPlacement {
     pub start_beat: f64,
     pub clip_name: String,
     pub transpose_semitones: i64,
+    pub reference_alignment: Option<reference_audio::ReferenceAlignment>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -603,6 +604,7 @@ pub fn build_service_folder(
                 } else {
                     0
                 },
+                reference_alignment: None,
             });
         }
 
@@ -635,6 +637,7 @@ pub fn build_service_folder(
                 start_beat: placement.start_beat,
                 clip_name: format!("LL|{}|REFERENCE", song.title),
                 transpose_semitones: item.transpose_semitones,
+                reference_alignment: reference_status.alignment.clone(),
             });
         }
 
