@@ -902,6 +902,142 @@
     $("desktopNextSectionBtn").disabled = !placement || !sections.length || currentIndex >= sections.length - 1;
   }
 
+  function formatSongClock(seconds) {
+    const safe = Math.max(0, Number(seconds) || 0);
+    const minutes = Math.floor(safe / 60);
+    const remainder = safe - minutes * 60;
+    return minutes + ":" + remainder.toFixed(1).padStart(4, "0");
+  }
+
+  function renderLibraryRail() {
+    const host = $("liveLibraryList");
+    if (!host) return;
+    const query = String(state.liveLibraryQuery || "").trim().toLowerCase();
+    const songs = state.songs
+      .filter((song) => !query || [song.title, song.artist, song.key].join(" ").toLowerCase().includes(query))
+      .slice(0, 40);
+
+    host.innerHTML = "";
+    songs.forEach((song) => {
+      const button = document.createElement("button");
+      button.className = "rail-song";
+      button.innerHTML =
+        '<strong>' + escapeHtml(song.title) + '</strong>' +
+        '<small>' + escapeHtml([song.artist, song.bpm + " BPM", song.key].filter(Boolean).join(" · ")) + '</small>';
+      button.addEventListener("click", () => {
+        const placement = state.arrangement && state.arrangement.songs
+          ? state.arrangement.songs.find((item) => item.songId === song.id)
+          : null;
+        if (placement) {
+          jumpTo(placement, null);
+        } else {
+          editSong(song);
+          go("songs");
+        }
+      });
+      host.appendChild(button);
+    });
+
+    if (!songs.length) {
+      host.innerHTML = '<div class="empty">No matching songs.</div>';
+    }
+  }
+
+  function renderArrangementTimeline() {
+    const host = $("arrangementTimeline");
+    if (!host) return;
+
+    const arrangement = state.arrangement;
+    const ctx = state.live && state.live.liveContext;
+    let placement = currentPlacement();
+    if (!placement && arrangement && arrangement.songs && arrangement.songs.length) {
+      placement = arrangement.songs[0];
+    }
+
+    if (!placement) {
+      host.innerHTML = '<div class="timeline-empty">Load or sync a service to see the Arrangement.</div>';
+      return;
+    }
+
+    const start = Number(placement.startBeat || 0);
+    const end = Number(placement.endBeat || start + 1);
+    const duration = Math.max(0.001, end - start);
+    const meter = placement.meter || { numerator: 4, denominator: 4 };
+    const beatsPerBar = Math.max(0.25, Number(meter.numerator || 4) * (4 / Number(meter.denominator || 4)));
+    const bars = Math.max(1, Math.round(duration / beatsPerBar));
+    const overviewTracks = state.arrangementOverview && Array.isArray(state.arrangementOverview.tracks)
+      ? state.arrangementOverview.tracks
+      : [];
+    const fallbackTracks = state.live && Array.isArray(state.live.tracks)
+      ? state.live.tracks.map((track) => ({ index: track.index, name: track.name, color: 0, clips: [] }))
+      : [];
+    const tracks = (overviewTracks.length ? overviewTracks : fallbackTracks).slice(0, 24);
+    const playheadBeat = Number(state.live && state.live.currentSongTime);
+    const playheadPct = Number.isFinite(playheadBeat)
+      ? Math.max(0, Math.min(100, ((playheadBeat - start) / duration) * 100))
+      : 0;
+
+    const sections = placement.sections || [];
+    let html = '<div class="timeline-canvas" style="--timeline-bars:' + bars + '">';
+
+    html += '<div class="timeline-ruler-row"><div class="timeline-track-label ruler-label">SECTIONS</div><div class="timeline-ruler">';
+    sections.forEach((section, index) => {
+      const next = sections[index + 1];
+      const sectionStart = Number(section.startBeat || start);
+      const sectionEnd = next ? Number(next.startBeat) : end;
+      const left = Math.max(0, Math.min(100, ((sectionStart - start) / duration) * 100));
+      const width = Math.max(0.8, Math.min(100 - left, ((sectionEnd - sectionStart) / duration) * 100));
+      const active = ctx && ctx.sectionId === section.id;
+      html += '<button class="timeline-section' + (active ? ' active' : '') + '" data-timeline-section="' +
+        escapeHtml(section.id) + '" style="left:' + left + '%;width:' + width + '%">' +
+        '<span>' + escapeHtml(section.name) + '</span><small>BAR ' + section.localStartBar + '</small></button>';
+    });
+    html += '<div class="timeline-playhead" style="left:' + playheadPct + '%"></div></div></div>';
+
+    tracks.forEach((track) => {
+      const clips = Array.isArray(track.clips) ? track.clips.filter((clip) =>
+        Number(clip.endTime) > start && Number(clip.startTime) < end
+      ) : [];
+      html += '<div class="timeline-track-row"><div class="timeline-track-label">' +
+        '<span>' + String(Number(track.index || 0) + 1).padStart(2, "0") + '</span>' +
+        '<strong>' + escapeHtml(track.name || ("Track " + (Number(track.index || 0) + 1))) + '</strong></div>' +
+        '<div class="timeline-lane" style="--bar-size:' + (100 / bars) + '%">';
+
+      clips.forEach((clip) => {
+        const clipStart = Math.max(start, Number(clip.startTime));
+        const clipEnd = Math.min(end, Number(clip.endTime));
+        const left = Math.max(0, ((clipStart - start) / duration) * 100);
+        const width = Math.max(0.35, ((clipEnd - clipStart) / duration) * 100);
+        const color = liveColor(clip.color, "#173e67");
+        const text = readableText(color);
+        html += '<div class="timeline-clip' + (clip.isMidiClip ? ' midi' : ' audio') + '" style="left:' + left +
+          '%;width:' + width + '%;--clip-color:' + color + ';--clip-text:' + text + '">' +
+          '<span>' + escapeHtml(clip.name || track.name || "Clip") + '</span></div>';
+      });
+
+      html += '<div class="timeline-playhead" style="left:' + playheadPct + '%"></div></div></div>';
+    });
+
+    const cuePoints = state.arrangementOverview && Array.isArray(state.arrangementOverview.cuePoints)
+      ? state.arrangementOverview.cuePoints.filter((cue) => Number(cue.time) >= start && Number(cue.time) <= end)
+      : [];
+    if (cuePoints.length) {
+      html += '<div class="timeline-cue-row"><div class="timeline-track-label"><strong>CUES</strong></div><div class="timeline-lane cue-lane">';
+      cuePoints.forEach((cue) => {
+        const left = Math.max(0, Math.min(100, ((Number(cue.time) - start) / duration) * 100));
+        html += '<div class="timeline-cue" title="' + escapeHtml(cue.name || "Cue") + '" style="left:' + left + '%"></div>';
+      });
+      html += '<div class="timeline-playhead" style="left:' + playheadPct + '%"></div></div></div>';
+    }
+
+    html += '</div>';
+    host.innerHTML = html;
+
+    host.querySelectorAll("[data-timeline-section]").forEach((button) => {
+      button.addEventListener("click", () => jumpTo(placement, button.dataset.timelineSection));
+    });
+  }
+
   function renderMixer() {
     const tracks = state.live && Array.isArray(state.live.tracks) ? state.live.tracks : [];
     const signature = tracks.map((track) => track.index + ":" + track.name).join("|");
@@ -910,25 +1046,24 @@
       state.mixerSignature = signature;
       $("desktopMixer").innerHTML = "";
       tracks.forEach((track) => {
-        const row = document.createElement("div");
-        row.className = "desktop-mixer-row";
-        row.dataset.trackIndex = track.index;
-        row.innerHTML =
-          '<span class="mix-num">' + String(track.number).padStart(2, "0") + '</span>' +
-          '<strong>' + escapeHtml(track.name) + '</strong>' +
-          '<input type="range" min="0" max="1" step="0.01" value="' +
-          (Number.isFinite(track.volume) ? track.volume : 0.85) + '">' +
+        const channel = document.createElement("div");
+        channel.className = "v1-mixer-channel";
+        channel.dataset.trackIndex = track.index;
+        channel.innerHTML =
+          '<div class="mix-channel-name"><span>' + String(track.number).padStart(2, "0") + '</span><strong>' +
+          escapeHtml(track.name) + '</strong></div>' +
+          '<div class="mix-fader-wrap"><input class="mix-fader" type="range" min="0" max="1" step="0.01" value="' +
+          (Number.isFinite(track.volume) ? track.volume : 0.85) + '"></div>' +
           '<span class="mix-value">--</span>' +
-          '<button class="mix-toggle mute">M</button>' +
-          '<button class="mix-toggle solo">S</button>';
+          '<div class="mix-channel-actions"><button class="mix-toggle mute">M</button><button class="mix-toggle solo">S</button></div>';
 
-        const slider = row.querySelector('input[type="range"]');
+        const slider = channel.querySelector('input[type="range"]');
         slider.addEventListener("pointerdown", () => slider.dataset.dragging = "1");
         const release = () => delete slider.dataset.dragging;
         slider.addEventListener("pointerup", release);
         slider.addEventListener("pointercancel", release);
         slider.addEventListener("input", () => {
-          row.querySelector(".mix-value").textContent = Math.round(Number(slider.value) * 100) + "%";
+          channel.querySelector(".mix-value").textContent = Math.round(Number(slider.value) * 100) + "%";
           clearTimeout(volumeTimers.get(track.index));
           volumeTimers.set(track.index, setTimeout(() => {
             direct({
@@ -938,14 +1073,14 @@
           }, 90));
         });
 
-        row.querySelector(".mute").addEventListener("click", () => {
+        channel.querySelector(".mute").addEventListener("click", () => {
           const current = (state.live.tracks || []).find((item) => item.index === track.index);
           direct({
             type: "set_track_mute",
             args: { track: { index: track.index }, value: !(current && current.mute) }
           }).catch(() => {});
         });
-        row.querySelector(".solo").addEventListener("click", () => {
+        channel.querySelector(".solo").addEventListener("click", () => {
           const current = (state.live.tracks || []).find((item) => item.index === track.index);
           direct({
             type: "set_track_solo",
@@ -953,21 +1088,23 @@
           }).catch(() => {});
         });
 
-        $("desktopMixer").appendChild(row);
+        $("desktopMixer").appendChild(channel);
       });
     }
 
     tracks.forEach((track) => {
-      const row = $("desktopMixer").querySelector('[data-track-index="' + track.index + '"]');
-      if (!row) return;
-      const slider = row.querySelector('input[type="range"]');
+      const channel = $("desktopMixer").querySelector('[data-track-index="' + track.index + '"]');
+      if (!channel) return;
+      const slider = channel.querySelector('input[type="range"]');
       if (!slider.dataset.dragging && Number.isFinite(track.volume)) slider.value = track.volume;
-      row.querySelector(".mix-value").textContent = Number.isFinite(track.volume) ? Math.round(track.volume * 100) + "%" : "--";
-      row.querySelector(".mute").classList.toggle("active", !!track.mute);
-      row.querySelector(".solo").classList.toggle("active", !!track.solo);
+      channel.querySelector(".mix-value").textContent = Number.isFinite(track.volume) ? Math.round(track.volume * 100) + "%" : "--";
+      channel.querySelector(".mute").classList.toggle("active", !!track.mute);
+      channel.querySelector(".solo").classList.toggle("active", !!track.solo);
     });
 
-    if (!tracks.length) $("desktopMixer").innerHTML = '<div class="empty">Open Ableton and load Luma Live.amxd to see track controls.</div>';
+    if (!tracks.length) {
+      $("desktopMixer").innerHTML = '<div class="empty">Open Ableton and load the Luma Live adapter to see mixer channels.</div>';
+    }
   }
 
   function renderBusk() {
