@@ -162,6 +162,264 @@
       "Song package is ready to be collected into a service.";
   }
 
+  function referenceBeatsPerBar() {
+    const numerator = Math.max(1, Number($("referenceMeterNum").value || $("songMeterNum").value || 4));
+    const denominator = Math.max(1, Number($("referenceMeterDen").value || $("songMeterDen").value || 4));
+    return numerator * (4 / denominator);
+  }
+
+  function referenceSecondsPerBar() {
+    const bpm = Math.max(1, Number($("referenceBpm").value || $("songBpm").value || 120));
+    return (60 / bpm) * referenceBeatsPerBar();
+  }
+
+  function referenceTimeToBar(seconds) {
+    const first = Math.max(0, Number($("referenceDownbeat").value || 0));
+    const perBar = referenceSecondsPerBar();
+    if (!Number.isFinite(seconds) || !Number.isFinite(perBar) || perBar <= 0) return 1;
+    return Math.max(1, Math.round((seconds - first) / perBar) + 1);
+  }
+
+  function sectionLines() {
+    return String($("songSections").value || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const match = line.match(/^(.+?)\s*@\s*(\d+)$/);
+        return match ? { name: match[1].trim(), bar: Number(match[2]) } : null;
+      })
+      .filter(Boolean);
+  }
+
+  function nextSectionName(base) {
+    const existing = sectionLines().map((item) => item.name.toLowerCase());
+    if (!existing.includes(base.toLowerCase())) return base;
+    let index = 2;
+    while (existing.includes((base + " " + index).toLowerCase())) index += 1;
+    return base + " " + index;
+  }
+
+  function addSectionAtCursor(base) {
+    const status = state.referenceStatus;
+    const analysis = status && status.analysis;
+    if (!analysis || !Number.isFinite(state.referenceCursorTime)) {
+      return showError("Click the waveform first to choose where this section begins.");
+    }
+    const bar = referenceTimeToBar(state.referenceCursorTime);
+    const entries = sectionLines().filter((item) => item.bar !== bar);
+    entries.push({ name: nextSectionName(base), bar });
+    entries.sort((a, b) => a.bar - b.bar);
+    $("songSections").value = entries.map((item) => item.name + " @ " + item.bar).join("\n");
+    $("referenceCursorBar").textContent = base + " added at bar " + bar;
+    drawReferenceWaveform();
+  }
+
+  function drawReferenceWaveform() {
+    const canvas = $("referenceWaveform");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = "#0d1014";
+    ctx.fillRect(0, 0, width, height);
+
+    const status = state.referenceStatus;
+    const analysis = status && status.analysis;
+    $("referenceWaveformEmpty").hidden = !!(analysis && analysis.peaks && analysis.peaks.length);
+    if (!analysis || !analysis.peaks || !analysis.peaks.length) return;
+
+    const peaks = analysis.peaks;
+    const mid = height / 2;
+    ctx.strokeStyle = "#2d333b";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, mid);
+    ctx.lineTo(width, mid);
+    ctx.stroke();
+
+    ctx.fillStyle = "#77aee8";
+    const step = width / peaks.length;
+    for (let i = 0; i < peaks.length; i += 1) {
+      const amp = Math.max(1, Number(peaks[i]) * (height * 0.40));
+      const x = i * step;
+      ctx.fillRect(x, mid - amp, Math.max(1, step * 0.82), amp * 2);
+    }
+
+    const duration = Number(analysis.durationSeconds || 0);
+    const bpm = Number($("referenceBpm").value || 0);
+    const first = Number($("referenceDownbeat").value || 0);
+    const beatsPerBar = referenceBeatsPerBar();
+    if (duration > 0 && bpm > 0 && beatsPerBar > 0) {
+      const secPerBar = (60 / bpm) * beatsPerBar;
+      ctx.font = "18px -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.textBaseline = "top";
+      let bar = 1;
+      for (let time = first; time <= duration + 0.0001; time += secPerBar, bar += 1) {
+        if (time < 0) continue;
+        const x = (time / duration) * width;
+        const major = ((bar - 1) % 4) === 0;
+        ctx.strokeStyle = major ? "#87909b" : "#343a43";
+        ctx.lineWidth = major ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+        if (major) {
+          ctx.fillStyle = "#929aa5";
+          ctx.fillText(String(bar), Math.min(width - 34, x + 5), 6);
+        }
+      }
+
+      const sections = sectionLines();
+      ctx.font = "bold 18px -apple-system, BlinkMacSystemFont, sans-serif";
+      sections.forEach((section) => {
+        const time = first + (section.bar - 1) * secPerBar;
+        if (time < 0 || time > duration) return;
+        const x = (time / duration) * width;
+        ctx.fillStyle = "#101820";
+        ctx.fillRect(x, 32, Math.min(150, width - x), 34);
+        ctx.strokeStyle = "#d5e7f8";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, 30);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+        ctx.fillStyle = "#e7f2fc";
+        ctx.fillText(section.name.toUpperCase(), Math.min(width - 145, x + 6), 38);
+      });
+    }
+
+    state.referenceTaps.forEach((time, index) => {
+      if (!(duration > 0)) return;
+      const x = (Number(time) / duration) * width;
+      ctx.strokeStyle = "#ffd36a";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+      ctx.fillStyle = "#ffd36a";
+      ctx.fillText("1", Math.min(width - 16, x + 4), height - 26);
+    });
+
+    if (Number.isFinite(state.referenceCursorTime) && duration > 0) {
+      const x = (state.referenceCursorTime / duration) * width;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+  }
+
+  function renderReferenceEditor() {
+    const enabled = !!state.editingSongId;
+    const status = state.referenceStatus;
+    const sourceReady = !!(status && status.sourceExists);
+    const analysis = status && status.analysis;
+    const aligned = !!(status && status.alignment);
+
+    ["useAbletonReference","importReferenceTrack"].forEach((id) => $(id).disabled = !enabled);
+    $("analyzeReferenceTrack").disabled = !sourceReady;
+    $("useDetectedAlignment").disabled = !(analysis && Number.isFinite(Number(analysis.detectedBpm)));
+    $("tapDownbeat").disabled = !sourceReady;
+    $("clearDownbeatTaps").disabled = state.referenceTaps.length === 0;
+    $("saveReferenceAlignment").disabled = !analysis;
+    $("applyReferenceWarp").disabled = !(analysis && aligned);
+
+    if (!enabled) {
+      $("referenceBadge").textContent = "SAVE SONG FIRST";
+      $("referenceSourcePath").textContent = "Create the song first, then attach audio.";
+      $("referenceStatusText").textContent = "The Track Editor becomes active after the song has an ID.";
+      state.referenceCursorTime = null;
+      drawReferenceWaveform();
+      return;
+    }
+
+    if (!sourceReady) {
+      $("referenceBadge").textContent = "NO TRACK";
+      $("referenceSourcePath").textContent = "Select an Ableton audio clip or import a rehearsal track.";
+      $("referenceStatusText").textContent = "The reference can stay linked to Ableton's existing file. Importing is optional.";
+      drawReferenceWaveform();
+      return;
+    }
+
+    $("referenceBadge").textContent = aligned ? "GRID READY" : (analysis ? "ANALYZED" : "READY TO ANALYZE");
+    $("referenceSourcePath").textContent = status.source && status.source.path ? status.source.path : "Reference attached";
+
+    const sourceAlignment = status.alignment || {};
+    if (document.activeElement !== $("referenceBpm")) {
+      $("referenceBpm").value = String(
+        sourceAlignment.bpm ||
+        (analysis && analysis.detectedBpm) ||
+        Number($("songBpm").value || 120)
+      );
+    }
+    if (document.activeElement !== $("referenceMeterNum")) {
+      $("referenceMeterNum").value = String(sourceAlignment.numerator || Number($("songMeterNum").value || 4));
+    }
+    if (document.activeElement !== $("referenceMeterDen")) {
+      $("referenceMeterDen").value = String(sourceAlignment.denominator || Number($("songMeterDen").value || 4));
+    }
+    if (document.activeElement !== $("referenceDownbeat")) {
+      $("referenceDownbeat").value = String(
+        sourceAlignment.firstDownbeatSeconds ??
+        (analysis && analysis.suggestedFirstDownbeatSeconds) ??
+        0
+      );
+    }
+
+    const details = [];
+    if (analysis) {
+      details.push((Math.round(Number(analysis.durationSeconds || 0) * 10) / 10) + " sec");
+      details.push((analysis.sampleRate || "--") + " Hz");
+      if (analysis.detectedBpm) details.push("detected " + analysis.detectedBpm + " BPM");
+    } else {
+      details.push("Analyze to draw the waveform and estimate tempo.");
+    }
+    if (state.referenceTaps.length) details.push(state.referenceTaps.length + " Tap 1 anchor" + (state.referenceTaps.length === 1 ? "" : "s"));
+    $("referenceStatusText").textContent = details.join(" · ");
+    drawReferenceWaveform();
+  }
+
+  async function loadReferenceStatus(id) {
+    if (!id) {
+      state.referenceStatus = null;
+      state.referenceTaps = [];
+      state.referenceCursorTime = null;
+      renderReferenceEditor();
+      return;
+    }
+    try {
+      state.referenceStatus = await invoke("get_reference_status", { id });
+      state.referenceTaps = ((state.referenceStatus.alignment && state.referenceStatus.alignment.markers) || [])
+        .filter((marker) => Number.isFinite(Number(marker.sampleTime)))
+        .map((marker) => Number(marker.sampleTime));
+      state.referenceCursorTime = null;
+      renderReferenceEditor();
+    } catch (error) {
+      state.referenceStatus = null;
+      renderReferenceEditor();
+      showError(error);
+    }
+  }
+
+  function referenceAlignmentPayload() {
+    const bpm = Number($("referenceBpm").value);
+    const numerator = Number($("referenceMeterNum").value);
+    const denominator = Number($("referenceMeterDen").value);
+    const firstDownbeatSeconds = Number($("referenceDownbeat").value);
+    const beatsPerBar = numerator * (4 / denominator);
+    const markers = state.referenceTaps.map((sampleTime, index) => ({
+      sampleTime: Number(sampleTime),
+      beatTime: index * beatsPerBar
+    }));
+    return { bpm, numerator, denominator, firstDownbeatSeconds, markers };
+  }
+
   function resetSongEditor() {
     state.editingSongId = null;
     $("songEditorTitle").textContent = "New Song";
@@ -176,7 +434,11 @@
     $("deleteSong").hidden = true;
     $("saveSongCopy").hidden = true;
     $("saveSong").textContent = "Create Song";
+    state.referenceStatus = null;
+    state.referenceTaps = [];
+    state.referenceCursorTime = null;
     renderSongPackageStatus();
+    renderReferenceEditor();
   }
 
   function editSong(song) {
@@ -194,6 +456,7 @@
     $("saveSongCopy").hidden = false;
     $("saveSong").textContent = "Update Song";
     renderSongPackageStatus();
+    loadReferenceStatus(song.id).catch(() => {});
   }
 
   function renderSongs() {
