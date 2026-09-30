@@ -1282,40 +1282,70 @@
   function renderLive() {
     updateBridgeStatus();
     renderTransport();
+
     const live = state.live || {};
     const ctx = live.liveContext;
     const placement = currentPlacement();
+    const librarySong = placement
+      ? state.songs.find((song) => song.id === placement.songId)
+      : null;
 
     if (!ctx) {
-      $("desktopCurrentSong").textContent = state.activeSetlistId ? "Waiting for playhead" : "No service loaded";
+      const waitingTitle = state.activeSetlistId ? "Waiting for playhead" : "No service loaded";
+      $("desktopCurrentSong").textContent = waitingTitle;
       $("desktopCurrentMeta").textContent = live.bridgeConnected
-        ? "Sync a setlist or move the playhead into a song."
-        : "Open Ableton and load Luma Live.amxd.";
+        ? "Sync a service or move the playhead into a song."
+        : "Open Ableton and load the Luma Live adapter.";
       $("desktopCurrentSection").textContent = "—";
       $("desktopNextSection").textContent = "—";
       $("desktopProgress").style.width = "0%";
       $("desktopPrevSong").disabled = true;
       $("desktopNextSong").disabled = !(state.arrangement && state.arrangement.songs && state.arrangement.songs.length);
+      $("mdSongTitle").textContent = waitingTitle;
+      $("mdSongMeta").textContent = live.bridgeConnected ? "READY FOR ARRANGEMENT" : "ABLETON OFFLINE";
+      $("mdKey").textContent = "--";
+      $("mdTime").textContent = "0:00.0";
+      $("mdBarDetail").textContent = "BAR --";
+      $("nextCallout").textContent = "—";
     } else {
-      $("desktopCurrentSong").textContent = ctx.songTitle;
-      $("desktopCurrentMeta").textContent = [
+      const effectiveKey = ctx.key ? transposeKey(ctx.key, ctx.transposeSemitones || 0) : "";
+      const meta = [
+        librarySong && librarySong.artist,
         ctx.bpm + " BPM",
-        ctx.key ? transposeKey(ctx.key, ctx.transposeSemitones || 0) : null,
+        effectiveKey,
         ctx.transposeSemitones ? ((ctx.transposeSemitones > 0 ? "+" : "") + ctx.transposeSemitones + " st") : null,
         ctx.meter ? ctx.meter.numerator + "/" + ctx.meter.denominator : null,
         state.arrangement ? "Song " + (ctx.songIndex + 1) + " of " + state.arrangement.songs.length : null
-      ].filter(Boolean).join(" · ");
+      ].filter(Boolean);
+
+      $("desktopCurrentSong").textContent = ctx.songTitle;
+      $("desktopCurrentMeta").textContent = meta.join(" · ");
       $("desktopCurrentSection").textContent = ctx.sectionName || "COUNT / PRE-ROLL";
       $("desktopNextSection").textContent = ctx.nextSectionName || "END";
       $("desktopProgress").style.width = Math.round((ctx.progress || 0) * 1000) / 10 + "%";
       $("desktopPrevSong").disabled = !ctx.previousSong;
       $("desktopNextSong").disabled = !ctx.nextSong;
+
+      $("mdSongTitle").textContent = ctx.songTitle;
+      $("mdSongMeta").textContent = meta.slice(0, 4).join(" · ");
+      $("mdKey").textContent = effectiveKey || "--";
+      $("mdBarDetail").textContent = "BAR " + ctx.currentBar + "." + (ctx.beatInBar || 1);
+      $("nextCallout").textContent = ctx.nextSectionName || "END";
+
+      const currentBeat = Number(live.currentSongTime);
+      const localBeat = placement && Number.isFinite(currentBeat)
+        ? Math.max(0, currentBeat - Number(placement.startBeat || 0))
+        : 0;
+      const seconds = localBeat * 60 / Math.max(1, Number(ctx.bpm || 120));
+      $("mdTime").textContent = formatSongClock(seconds);
     }
 
     renderSections(placement, ctx);
     renderMixer();
     renderBusk();
     renderService();
+    renderLibraryRail();
+    renderArrangementTimeline();
   }
 
   async function direct(command) {
@@ -1381,6 +1411,7 @@
       renderSetlists();
       renderLive();
       go("live");
+      loadArrangementOverview().catch(() => {});
       showNotice(data.syncError
         ? "Setlist loaded locally. Ableton sync is pending."
         : "Setlist synced to Ableton.");
@@ -1578,6 +1609,7 @@
         buildAbleton: true
       });
       await Promise.all([loadLibrary(), loadRuntime(), loadLive()]);
+      await loadArrangementOverview().catch(() => {});
       const warnings = result.service && result.service.warnings || [];
       const serviceResult = result.service || {};
       state.lastBuildFolder = serviceResult.serviceFolder || null;
