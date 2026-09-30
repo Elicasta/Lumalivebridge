@@ -480,10 +480,22 @@
             <div id="remoteLinks" class="remote-links"></div>
           </article>
 
-          <article class="panel">
-            <span class="eyebrow">ABLETON ADAPTER</span>
-            <h3>Localhost Only</h3>
-            <p class="muted">Luma Live.amxd talks only to this Mac at <code>127.0.0.1:17878</code>. It does not host another iPad website.</p>
+          <article class="panel adapter-settings">
+            <div class="panel-heading compact-heading">
+              <div>
+                <span class="eyebrow">ABLETON ADAPTER</span>
+                <h3>Luma Live 1.0</h3>
+              </div>
+              <span id="abletonAdapterBadge" class="package-badge">CHECKING</span>
+            </div>
+            <p class="muted">The desktop app carries the matching Max adapter source. Install or update it here so Ableton and Luma Live always speak the same protocol.</p>
+            <div class="detail"><span>Install folder</span><code id="abletonAdapterPath">Loading…</code></div>
+            <div id="abletonAdapterStatusText" class="adapter-status-text">Checking the Ableton User Library…</div>
+            <div class="adapter-actions">
+              <button id="installAbletonAdapter" class="primary">Install / Update Adapter</button>
+              <button id="revealAbletonAdapter" class="quiet">Open Adapter Folder</button>
+            </div>
+            <p class="hint">Existing <code>.amxd</code> devices are preserved. If Luma finds an older Luma Live device elsewhere in your Max MIDI Effects library, it migrates a copy into the managed folder.</p>
           </article>
 
           <article class="panel">
