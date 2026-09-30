@@ -458,7 +458,7 @@ async fn use_selected_ableton_reference(
     id: String,
 ) -> Result<Value, String> {
     let song = song_by_id(state.inner(), &id)?;
-    let live = bridge::state().await?;
+    let live = bridge::send("get_detail_clip_info", json!({})).await?;
     let detail = live
         .get("detailClip")
         .or_else(|| live.get("selectedClip"))
