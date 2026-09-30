@@ -1,4 +1,4 @@
-const CACHE = "luma-live-v060-track-editor";
+const CACHE = "luma-live-v100";
 const ASSETS = ["/", "/styles.css", "/app.js", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
