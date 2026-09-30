@@ -123,6 +123,18 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         product: "luma-live-ableton-adapter",
+        version: "1.0.0",
+        capabilities: [
+          "arrangement-audio",
+          "arrangement-overview",
+          "transpose",
+          "bulk-build",
+          "extended-busk",
+          "session-overview",
+          "reference-editor",
+          "detail-clip",
+          "warp-editor"
+        ],
         host: HOST,
         port: PORT
       });
