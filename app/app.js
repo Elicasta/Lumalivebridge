@@ -1747,6 +1747,36 @@
     renderRuntime();
   }
 
+  function renderAbletonAdapterStatus(status) {
+    const badge = $("abletonAdapterBadge");
+    const text = $("abletonAdapterStatusText");
+    if (!badge || !text) return;
+
+    $("abletonAdapterPath").textContent = status && status.path ? status.path : "Unavailable";
+    const ready = !!(status && status.ready);
+    const sourceCurrent = !!(status && status.sourceCurrent);
+    const amxdFound = !!(status && status.amxdFound);
+
+    badge.textContent = ready ? "READY" : sourceCurrent ? "NEEDS DEVICE" : "UPDATE";
+    badge.classList.toggle("ready", ready);
+    badge.classList.toggle("warn", !ready);
+
+    if (ready) {
+      text.textContent = "Adapter 1.0 source and a saved Luma Live.amxd are installed.";
+    } else if (sourceCurrent && !amxdFound) {
+      text.textContent = "Adapter source is current. Save or migrate a Luma Live.amxd into this folder once.";
+    } else {
+      text.textContent = "Install the bundled 1.0 adapter before using Live, Busk, or Track Editor.";
+    }
+  }
+
+  async function loadAbletonAdapterStatus() {
+    const status = await invoke("get_ableton_adapter_status");
+    state.adapterStatus = status || {};
+    renderAbletonAdapterStatus(state.adapterStatus);
+    return state.adapterStatus;
+  }
+
   async function loadLive() {
     try {
       const live = await invoke("get_live_state");
@@ -2194,6 +2224,38 @@
     }
   });
 
+  $("installAbletonAdapter").addEventListener("click", async () => {
+    const button = $("installAbletonAdapter");
+    button.disabled = true;
+    button.textContent = "Installing…";
+    showError("");
+    try {
+      const status = await invoke("install_ableton_adapter");
+      state.adapterStatus = status || {};
+      renderAbletonAdapterStatus(state.adapterStatus);
+      if (status.amxdFound) {
+        showNotice(status.migratedDevice
+          ? "Luma Live 1.0 adapter installed and your existing Max device was migrated. Reload it in Ableton."
+          : "Luma Live 1.0 adapter updated. Reload Luma Live.amxd in Ableton.");
+      } else {
+        showNotice("Adapter source installed. Open the adapter folder and save LumaLiveBridge.maxpat as Luma Live.amxd once.");
+      }
+    } catch (error) {
+      showError(error);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Install / Update Adapter";
+    }
+  });
+
+  $("revealAbletonAdapter").addEventListener("click", async () => {
+    try {
+      await invoke("reveal_ableton_adapter");
+    } catch (error) {
+      showError(error);
+    }
+  });
+
   $("setlistGap").addEventListener("input", () => {
     renderDraft();
     renderBuildTimeline();
@@ -2221,7 +2283,9 @@
       const missingEditorCapabilities = editorCapabilities.filter((name) => !capabilities.includes(name));
       const buildReady = !!result.bridgeConnected && missingBuildCapabilities.length === 0;
       const editorReady = !!result.bridgeConnected && missingEditorCapabilities.length === 0;
+      const localAdapter = result.adapterInstall || {};
       host.innerHTML =
+        '<div class="check-row ' + (localAdapter.ready ? "pass" : "fail") + '"><strong>Installed adapter files</strong><span>' + (localAdapter.ready ? "1.0 READY" : (localAdapter.sourceCurrent ? "SAVE AMXD" : "UPDATE")) + '</span></div>' +
         '<div class="check-row ' + (result.libraryWritable ? "pass" : "fail") + '"><strong>Library write access</strong><span>' + (result.libraryWritable ? "PASS" : "FAIL") + '</span></div>' +
         '<div class="check-row ' + (result.templateExists ? "pass" : "warn") + '"><strong>Church Standard.als</strong><span>' + (result.templateExists ? "FOUND" : "MISSING") + '</span></div>' +
         '<div class="check-row ' + (result.bridgeConnected ? "pass" : "fail") + '"><strong>Ableton adapter' +
@@ -2302,7 +2366,7 @@
   resetSongEditor();
   resetSetlistEditor();
 
-  Promise.all([loadLibrary(), loadPackageStatuses(), loadRuntime(), loadLive(), loadPairingCode()])
+  Promise.all([loadLibrary(), loadPackageStatuses(), loadRuntime(), loadLive(), loadPairingCode(), loadAbletonAdapterStatus()])
     .then(() => loadArrangementOverview().catch(() => {}))
     .catch((error) => showError(error));
   setInterval(() => loadRuntime().catch(() => {}), 2500);
