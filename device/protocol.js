@@ -2,6 +2,7 @@
 
 const COMMAND_TYPES = Object.freeze([
   "get_state",
+  "get_arrangement_overview",
   "create_track",
   "rename_track",
   "create_scene",
