@@ -255,3 +255,35 @@ test("adapter health advertises the complete 1.0 surface", () => {
     assert.match(bridge, new RegExp(capability));
   }
 });
+
+
+test("remote Busk fetches the dedicated Session endpoint", () => {
+  const remoteJs = fs.readFileSync(path.join(__dirname, "..", "remote", "app.js"), "utf8");
+  const lanRs = fs.readFileSync(path.join(__dirname, "..", "src-tauri", "src", "lan.rs"), "utf8");
+  assert.match(remoteJs, /api\("\/api\/session"\)/);
+  assert.match(remoteJs, /refreshSession/);
+  assert.match(lanRs, /route\("\/api\/session", get\(session_state\)\)/);
+  assert.match(lanRs, /get_session_overview/);
+});
+
+
+test("desktop HTML has no duplicate ids", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "app", "index.html"), "utf8");
+  const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
+  const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
+  assert.deepEqual([...new Set(duplicates)], []);
+});
+
+
+test("1.0 version is consistent across app manifests and DMG workflow", () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  const tauri = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "src-tauri", "tauri.conf.json"), "utf8"));
+  const cargo = fs.readFileSync(path.join(__dirname, "..", "src-tauri", "Cargo.toml"), "utf8");
+  const build = fs.readFileSync(path.join(__dirname, "..", ".github", "workflows", "desktop-build.yml"), "utf8");
+
+  assert.equal(pkg.version, "1.0.0");
+  assert.equal(tauri.version, "1.0.0");
+  assert.match(cargo, /version = "1\.0\.0"/);
+  assert.match(build, /Luma-Live-1\.0\.0-aarch64\.dmg/);
+  assert.match(build, /Luma-Live-macOS-v1\.0\.0/);
+});
