@@ -105,6 +105,9 @@
     document.querySelectorAll(".page").forEach((panel) => panel.classList.toggle("active", panel.dataset.pagePanel === page));
     $("pageEyebrow").textContent = titles[page][0];
     $("pageTitle").textContent = titles[page][1];
+
+    if (page === "live") loadArrangementOverview().catch(() => {});
+    if (page === "busk") loadSessionOverview().catch(() => {});
   }
 
   document.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", () => go(item.dataset.page)));
@@ -1349,11 +1352,19 @@
   }
 
   async function direct(command) {
+    const previousSession = state.live && state.live.session;
+    const previousSelectedClip = state.live && state.live.selectedClip;
     const live = await invoke("direct_live_command", { command });
     state.live = live;
+    if (previousSession) state.live.session = previousSession;
+    if (previousSelectedClip) state.live.selectedClip = previousSelectedClip;
     if ("activeSetlistId" in live) state.activeSetlistId = live.activeSetlistId;
     recomputeArrangement();
     renderLive();
+
+    if (document.body.dataset.page === "busk") {
+      loadSessionOverview().catch(() => {});
+    }
     return live;
   }
 
@@ -1562,6 +1573,27 @@
     } catch (_) {
       // Keep the last good overview. Live control should not flicker because
       // an expensive Arrangement read missed one polling window.
+    }
+  }
+
+  async function loadSessionOverview() {
+    if (!(state.live && state.live.bridgeConnected)) {
+      if (state.live) {
+        state.live.session = { tracks: [], scenes: [] };
+        state.live.selectedClip = null;
+      }
+      renderBusk();
+      return;
+    }
+
+    try {
+      const session = await invoke("get_session_overview");
+      state.live = state.live || {};
+      state.live.session = session || { tracks: [], scenes: [] };
+      state.live.selectedClip = session && session.selectedClip || null;
+      renderBusk();
+    } catch (_) {
+      // Session enumeration is secondary to transport. Keep the last good grid.
     }
   }
 
@@ -2077,6 +2109,9 @@
   setInterval(() => {
     if (document.body.dataset.page === "live") loadArrangementOverview().catch(() => {});
   }, 3000);
+  setInterval(() => {
+    if (document.body.dataset.page === "busk") loadSessionOverview().catch(() => {});
+  }, 1500);
   // The iPad plain-language surface can mutate the same SQLite library.
   // Refresh the desktop lists without requiring a relaunch.
   setInterval(() => loadLibrary().catch(() => {}), 4000);
