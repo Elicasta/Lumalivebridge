@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#090a0c">
+  <title>Luma Live</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <section id="pairingScreen" class="pairing-screen" hidden>
+    <div class="pairing-card">
+      <div class="pairing-brand"><span class="brand-mark">L</span><span>LUMA LIVE</span></div>
+      <span class="eyebrow">PAIR THIS DEVICE</span>
+      <h2>Enter the 6-digit code</h2>
+      <p>Open Luma Live on the Mac and use the pairing code shown in Settings.</p>
+      <input id="pairingCodeInput" class="pairing-code-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="000000">
+      <button id="pairingConnectBtn" class="primary pairing-connect">Connect</button>
+      <div id="pairingError" class="pairing-error" hidden></div>
+      <small>The six-digit code only pairs this iPad. A private token is stored afterward.</small>
+    </div>
+  </section>
+
+  <main id="remoteShell" class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">L</div>
+        <div><h1>Luma Live</h1><p>Ableton performance control</p></div>
+      </div>
+      <div class="status-wrap">
+        <span id="status" class="status offline">MAC OFFLINE</span>
+        <span id="bridgeStatus" class="status bridge-offline">ABLETON OFFLINE</span>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Remote pages">
+      <button class="tab active" data-tab="perform">Perform</button>
+      <button class="tab" data-tab="busk">Busk</button>
+    </nav>
+
+    <div id="error" class="error" hidden></div>
+    <div id="notice" class="notice" hidden></div>
+
+    <section class="page active" data-page="perform">
+      <section class="card hero-scene">
+        <span class="eyebrow">CURRENT SCENE</span>
+        <h2 id="currentScene">No active scene</h2>
+        <p id="sceneMeta">Stopped · -- BPM</p>
+        <div class="hero-actions">
+          <button id="playBtn" class="primary">▶ Play</button>
+          <button id="stopBtn">■ Stop</button>
+          <button id="stopAllBtn" class="danger">Stop Clips</button>
+          <button id="refreshBtn">Refresh</button>
+        </div>
+      </section>
+
+      <div class="perform-grid">
+        <section class="card">
+          <div class="card-head"><h3>Scenes</h3><span id="sceneCount" class="muted">0 scenes</span></div>
+          <div id="performScenes" class="perform-scenes"></div>
+        </section>
+
+        <section class="card tempo-card">
+          <span class="eyebrow">LIVE TEMPO</span>
+          <div class="tempo-number"><strong id="tempo">--</strong><span>BPM</span></div>
+          <p id="tempoHint">Current Live tempo.</p>
+          <div class="tempo-row">
+            <input id="tempoInput" type="number" min="20" max="999" step="0.1" value="120">
+            <button id="tempoOverrideBtn">Override</button>
+          </div>
+          <div class="tempo-nav">
+            <button id="previousSceneBtn">Previous</button>
+            <button id="nextSceneBtn">Next</button>
+          </div>
+          <p class="microcopy">Scene BPM is recalled by Ableton when a scene launches. Manual tempo here is a temporary Live override.</p>
+        </section>
+      </div>
+
+      <section class="card arrangement-card">
+        <div class="card-head">
+          <div><span class="eyebrow">ARRANGEMENT</span><h3 id="currentSong">No service loaded</h3></div>
+          <span id="songPosition" class="pill">—</span>
+        </div>
+        <p id="songMeta" class="muted">Choose a service below to enable song and section control.</p>
+        <div class="service-loader">
+          <select id="serviceSelect" aria-label="Service setlist"></select>
+          <button id="serviceLoadBtn" class="primary">Load Service</button>
+        </div>
+        <p id="serviceHelp" class="microcopy">You can load and sync a saved Luma Live setlist directly from the iPad.</p>
+        <div class="now-next">
+          <article><span class="eyebrow">NOW</span><strong id="currentSection">—</strong></article>
+          <article><span class="eyebrow">NEXT</span><strong id="nextSection">—</strong></article>
+        </div>
+        <div class="section-arrows">
+          <button id="previousSectionBtn">← Previous Section</button>
+          <button id="nextSectionBtn" class="primary">Next Section →</button>
+        </div>
+        <div id="sectionGrid" class="section-grid"></div>
+        <div class="song-arrows">
+          <button id="previousSongBtn">← Previous Song</button>
+          <button id="nextSongBtn">Next Song →</button>
+        </div>
+      </section>
+
+      <section class="card mixer-card">
+        <div class="card-head"><div><span class="eyebrow">TRACK CONTROL</span><h3>Arrangement Mixer</h3></div><span class="muted">Volume · mute · solo</span></div>
+        <div id="trackMixer" class="track-mixer"></div>
+      </section>
+
+      <section class="card command-card">
+        <div class="card-head"><div><span class="eyebrow">PLAIN LANGUAGE</span><h3>Tell Luma Live what to do</h3></div></div>
+        <div class="command-row">
+          <input id="commandInput" autocomplete="off" placeholder="Next section, mute BGV, load Sunday AM, set tempo to 72…">
+          <button id="commandPreviewBtn" class="primary">Preview</button>
+          <button id="commandBtn">Run Now</button>
+        </div>
+        <div id="commandPreviewPanel" class="command-preview" hidden>
+          <div><span class="eyebrow">PREVIEW</span><strong id="commandPreviewSummary">—</strong><small id="commandPreviewMeta"></small></div>
+          <div class="command-preview-actions"><button id="commandCancelBtn">Cancel</button><button id="commandApplyBtn" class="primary">Apply</button></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="page" data-page="busk">
+      <section class="card busk-card">
+        <div class="busk-head">
+          <div><strong>Busk</strong><span id="buskMeta">0 tracks · 0 scenes · -- BPM</span></div>
+          <div><button id="buskSyncBtn">Sync</button><button id="buskStopAllBtn" class="danger">Stop All</button></div>
+        </div>
+        <div id="buskGrid" class="busk-scroll"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

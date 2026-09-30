@@ -1,10 +1,15 @@
 {
-  "name": "luma-live-bridge",
-  "version": "0.1.0",
+  "name": "luma-live",
+  "version": "0.6.0",
   "private": true,
-  "description": "Local-first Ableton Live 12 command bridge for Max for Live",
+  "description": "Unified offline-first church show control with Arrangement song control, Busk, local library, LAN remote, and Ableton adapter",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
   },
   "engines": {
     "node": ">=18"
