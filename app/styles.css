@@ -2233,3 +2233,40 @@ body[data-page="setlists"] .data-row:hover {
     max-height: none;
   }
 }
+
+
+.adapter-settings {
+  border-color: #2b435c !important;
+  background: linear-gradient(180deg,#0d1a29,#10151c) !important;
+}
+.adapter-settings .detail {
+  margin-top: 12px;
+}
+.adapter-status-text {
+  margin-top: 11px;
+  padding: 9px 10px;
+  border: 1px solid #263b52;
+  border-radius: 8px;
+  background: #091522;
+  color: #91a9bf;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.adapter-actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 10px;
+}
+.adapter-actions button {
+  min-height: 38px;
+}
+.package-badge.ready {
+  border-color: #2a674f;
+  background: #102b22;
+  color: #79dbb2;
+}
+.package-badge.warn {
+  border-color: #765b31;
+  background: #2b2112;
+  color: #e7c074;
+}
