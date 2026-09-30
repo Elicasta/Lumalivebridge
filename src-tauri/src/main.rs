@@ -468,7 +468,11 @@ async fn use_selected_ableton_reference(
     id: String,
 ) -> Result<Value, String> {
     let song = song_by_id(state.inner(), &id)?;
-    let live = bridge::send("get_detail_clip_info", json!({})).await?;
+    let response = bridge::send("get_detail_clip_info", json!({})).await?;
+    let live = response
+        .get("result")
+        .cloned()
+        .unwrap_or(response);
     let detail = live
         .get("detailClip")
         .or_else(|| live.get("selectedClip"))
@@ -531,7 +535,10 @@ fn save_reference_alignment(
 #[tauri::command]
 async fn capture_detail_clip_position() -> Result<Value, String> {
     let response = bridge::send("get_detail_clip_info", json!({})).await?;
-    Ok(response)
+    Ok(response
+        .get("result")
+        .cloned()
+        .unwrap_or(response))
 }
 
 #[tauri::command]
@@ -577,7 +584,10 @@ async fn apply_reference_warp(
         }),
     )
     .await?;
-    Ok(response)
+    Ok(response
+        .get("result")
+        .cloned()
+        .unwrap_or(response))
 }
 
 #[tauri::command]
