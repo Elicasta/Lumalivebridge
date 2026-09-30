@@ -484,3 +484,113 @@ pub fn copy_external_reference_into(
     fs::copy(&source_path, &destination).map_err(|e| e.to_string())?;
     Ok(Some(destination))
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Meter, Section};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn song() -> Song {
+        Song {
+            id: "reference-test".into(),
+            title: "Reference Test".into(),
+            artist: String::new(),
+            bpm: 120.0,
+            key: "C".into(),
+            meter: Meter {
+                numerator: 4,
+                denominator: 4,
+            },
+            length_bars: 8,
+            sections: vec![Section {
+                id: "intro".into(),
+                name: "Intro".into(),
+                start_bar: 1,
+            }],
+            updated_at: 0,
+        }
+    }
+
+    fn temp_root() -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("luma-reference-test-{stamp}"))
+    }
+
+    fn write_test_wav(path: &Path) {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 8000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        for frame in 0..16000 {
+            let beat = frame % 4000;
+            let sample = if beat < 120 {
+                ((1.0 - beat as f32 / 120.0) * i16::MAX as f32 * 0.7) as i16
+            } else {
+                0
+            };
+            writer.write_sample(sample).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    #[test]
+    fn analysis_builds_waveform_for_wav_reference() {
+        let root = temp_root();
+        let song = song();
+        let source = root.join("source.wav");
+        fs::create_dir_all(&root).unwrap();
+        write_test_wav(&source);
+
+        attach_external(&root, &song, &source, "test").unwrap();
+        let analysis = analyze(&root, &song).unwrap();
+
+        assert!(analysis.duration_seconds > 1.9);
+        assert!(!analysis.peaks.is_empty());
+        assert_eq!(analysis.sample_rate, 8000);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn alignment_round_trips_with_tap_markers() {
+        let root = temp_root();
+        let song = song();
+        let source = root.join("source.wav");
+        fs::create_dir_all(&root).unwrap();
+        write_test_wav(&source);
+        attach_external(&root, &song, &source, "test").unwrap();
+
+        let saved = save_alignment(
+            &root,
+            &song,
+            ReferenceAlignment {
+                bpm: 120.0,
+                numerator: 4,
+                denominator: 4,
+                first_downbeat_seconds: 0.0,
+                markers: vec![
+                    WarpMarker {
+                        sample_time: 0.0,
+                        beat_time: 0.0,
+                    },
+                    WarpMarker {
+                        sample_time: 2.0,
+                        beat_time: 4.0,
+                    },
+                ],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(saved.alignment.unwrap().markers.len(), 2);
+        let _ = fs::remove_dir_all(root);
+    }
+}
