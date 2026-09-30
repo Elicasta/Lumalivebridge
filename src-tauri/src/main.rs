@@ -692,6 +692,9 @@ async fn build_service(
         if status.stem_count == 0 && !reference.source_exists {
             missing.push("original stems or reference track");
         }
+        if status.stem_count == 0 && reference.source_exists && reference.alignment.is_none() {
+            missing.push("saved reference grid alignment");
+        }
         if !missing.is_empty() {
             package_blockers.push(format!("{}: {}", song.title, missing.join(" + ")));
         }
@@ -784,7 +787,8 @@ async fn build_service(
                             "filePath": placement.collected_path,
                             "position": placement.start_beat,
                             "name": placement.clip_name,
-                            "transposeSemitones": placement.transpose_semitones
+                            "transposeSemitones": placement.transpose_semitones,
+                            "referenceAlignment": placement.reference_alignment
                         }),
                     )
                     .await?;
