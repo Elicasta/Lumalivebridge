@@ -10,6 +10,18 @@ const { validateCommand } = require("./validator");
 
 const PORT = Number(process.env.LUMA_BRIDGE_PORT || 17878);
 const HOST = "127.0.0.1";
+const ADAPTER_VERSION = "1.0.0";
+const ADAPTER_CAPABILITIES = [
+  "arrangement-audio",
+  "arrangement-overview",
+  "transpose",
+  "bulk-build",
+  "extended-busk",
+  "session-overview",
+  "reference-editor",
+  "detail-clip",
+  "warp-editor"
+];
 const APP_DIR = path.join(os.homedir(), "Library", "Application Support", "LumaLiveBridge");
 const LOG_FILE = path.join(APP_DIR, "audit.jsonl");
 const pending = new Map();
@@ -75,6 +87,13 @@ maxAPI.addHandler("state_json", (payload) => {
   }
 });
 
+function decorateState(value) {
+  return Object.assign({}, value || {}, {
+    adapterVersion: ADAPTER_VERSION,
+    adapterCapabilities: ADAPTER_CAPABILITIES.slice()
+  });
+}
+
 function json(res, status, body) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
@@ -123,18 +142,8 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         product: "luma-live-ableton-adapter",
-        version: "1.0.0",
-        capabilities: [
-          "arrangement-audio",
-          "arrangement-overview",
-          "transpose",
-          "bulk-build",
-          "extended-busk",
-          "session-overview",
-          "reference-editor",
-          "detail-clip",
-          "warp-editor"
-        ],
+        version: ADAPTER_VERSION,
+        capabilities: ADAPTER_CAPABILITIES,
         host: HOST,
         port: PORT
       });
@@ -142,7 +151,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/state") {
       const state = (await refreshState()) || latestState || {};
-      return json(res, 200, { ok: true, state });
+      return json(res, 200, { ok: true, state: decorateState(state) });
     }
 
     if (req.method === "POST" && url.pathname === "/api/direct") {
@@ -161,7 +170,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         result,
-        state: latestState || {}
+        state: decorateState(latestState || {})
       });
     }
 
