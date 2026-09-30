@@ -439,7 +439,8 @@ pub fn analyze(root: &Path, song: &Song) -> Result<ReferenceAnalysis, String> {
     let dir = ensure_reference_dir(root, song)?;
     let analysis_wav = dir.join(".analysis.wav");
     let prepared = prepare_analysis_wav(&source, &analysis_wav)?;
-    let (samples, sample_rate, channels) = read_wav_mono(&prepared)?;
+    let (samples, sample_rate, channels) = read_wav_mono(&prepared)
+        .map_err(|error| format!("Could not decode analysis audio {}: {}", prepared.display(), error))?;
     let duration_seconds = samples.len() as f64 / sample_rate.max(1) as f64;
     let analysis = ReferenceAnalysis {
         source_path: source.to_string_lossy().to_string(),
@@ -451,11 +452,14 @@ pub fn analyze(root: &Path, song: &Song) -> Result<ReferenceAnalysis, String> {
         suggested_first_downbeat_seconds: estimate_first_downbeat(&samples, sample_rate),
     };
 
+    let output_path = dir.join("analysis.json");
+    fs::create_dir_all(&dir)
+        .map_err(|error| format!("Could not prepare reference analysis folder {}: {}", dir.display(), error))?;
     fs::write(
-        analysis_path(root, song),
+        &output_path,
         serde_json::to_string(&analysis).map_err(|e| e.to_string())?,
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|error| format!("Could not write reference analysis {}: {}", output_path.display(), error))?;
 
     Ok(analysis)
 }
