@@ -1217,6 +1217,89 @@
     }
   }
 
+  function renderBuskMixer(tracks) {
+    const host = $("desktopBuskMixer");
+    if (!host) return;
+
+    const signature = tracks.map((track) => track.index + ":" + track.name).join("|");
+    if (signature !== state.buskMixerSignature) {
+      state.buskMixerSignature = signature;
+      host.innerHTML = "";
+
+      tracks.forEach((track) => {
+        const channel = document.createElement("div");
+        channel.className = "v1-mixer-channel busk-mixer-channel";
+        channel.dataset.trackIndex = track.index;
+        channel.innerHTML =
+          '<div class="mix-channel-name"><span>' + String(Number(track.index) + 1).padStart(2, "0") + '</span><strong>' +
+          escapeHtml(track.name || ("Track " + (Number(track.index) + 1))) + '</strong></div>' +
+          '<div class="busk-meter-fader">' +
+            '<div class="channel-meter"><i></i></div>' +
+            '<div class="mix-fader-wrap"><input class="mix-fader" type="range" min="0" max="1" step="0.01" value="' +
+              (Number.isFinite(Number(track.volume)) ? Number(track.volume) : 0.85) + '"></div>' +
+          '</div>' +
+          '<span class="mix-value">--</span>' +
+          '<div class="mix-channel-actions"><button class="mix-toggle mute">M</button><button class="mix-toggle solo">S</button></div>';
+
+        const slider = channel.querySelector(".mix-fader");
+        slider.addEventListener("pointerdown", () => slider.dataset.dragging = "1");
+        const release = () => delete slider.dataset.dragging;
+        slider.addEventListener("pointerup", release);
+        slider.addEventListener("pointercancel", release);
+        slider.addEventListener("input", () => {
+          channel.querySelector(".mix-value").textContent = Math.round(Number(slider.value) * 100) + "%";
+          clearTimeout(volumeTimers.get("busk-" + track.index));
+          volumeTimers.set("busk-" + track.index, setTimeout(() => {
+            direct({
+              type: "set_track_volume",
+              args: { track: { index: Number(track.index) }, value: Number(slider.value) }
+            }).catch(() => {});
+          }, 90));
+        });
+
+        channel.querySelector(".mute").addEventListener("click", () => {
+          const current = state.live && state.live.session && (state.live.session.tracks || [])
+            .find((entry) => Number(entry.index) === Number(track.index));
+          direct({
+            type: "set_track_mute",
+            args: { track: { index: Number(track.index) }, value: !(current && current.mute) }
+          }).catch((error) => showError(error));
+        });
+
+        channel.querySelector(".solo").addEventListener("click", () => {
+          const current = state.live && state.live.session && (state.live.session.tracks || [])
+            .find((entry) => Number(entry.index) === Number(track.index));
+          direct({
+            type: "set_track_solo",
+            args: { track: { index: Number(track.index) }, value: !(current && current.solo) }
+          }).catch((error) => showError(error));
+        });
+
+        host.appendChild(channel);
+      });
+    }
+
+    tracks.forEach((track) => {
+      const channel = host.querySelector('[data-track-index="' + track.index + '"]');
+      if (!channel) return;
+      const slider = channel.querySelector(".mix-fader");
+      if (!slider.dataset.dragging && Number.isFinite(Number(track.volume))) slider.value = Number(track.volume);
+      channel.querySelector(".mix-value").textContent = Number.isFinite(Number(track.volume))
+        ? Math.round(Number(track.volume) * 100) + "%"
+        : "--";
+      channel.querySelector(".mute").classList.toggle("active", !!track.mute);
+      channel.querySelector(".solo").classList.toggle("active", !!track.solo);
+      const meter = channel.querySelector(".channel-meter i");
+      const level = Math.max(0, Math.min(1, Number(track.meterLevel || 0)));
+      if (meter) meter.style.height = Math.round(level * 100) + "%";
+    });
+
+    if (!tracks.length) {
+      host.innerHTML = '<div class="empty">No Session mixer tracks.</div>';
+      state.buskMixerSignature = "";
+    }
+  }
+
   function renderBusk() {
     const live = state.live || {};
     $("desktopBuskClick").classList.toggle("active", !!live.metronome);
@@ -1234,6 +1317,8 @@
     const session = live.session || {};
     const tracks = Array.isArray(session.tracks) ? session.tracks : [];
     const scenes = Array.isArray(session.scenes) && session.scenes.length ? session.scenes : (Array.isArray(live.scenes) ? live.scenes : []);
+
+    renderBuskMixer(tracks);
 
     $("desktopBuskMeta").textContent = [
       tracks.length + " tracks",
