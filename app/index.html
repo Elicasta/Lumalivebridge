@@ -19,16 +19,16 @@
 
       <nav class="nav">
         <button class="nav-item active" data-page="live">
-          <span>Song Control</span><small>Arrangement performance</small>
+          <span>Live</span><small>Arrangement</small>
         </button>
         <button class="nav-item" data-page="busk">
           <span>Busk</span><small>Session View tools</small>
         </button>
         <button class="nav-item" data-page="songs">
-          <span>Library</span><small>Reusable songs</small>
+          <span>Library</span><small>Songs</small>
         </button>
         <button class="nav-item" data-page="setlists">
-          <span>Setlists</span><small>Build services</small>
+          <span>Build</span><small>Services</small>
         </button>
         <button class="nav-item" data-page="settings">
           <span>Settings</span><small>Local system</small>
@@ -58,90 +58,145 @@
       <div id="error" class="error" hidden></div>
       <div id="notice" class="notice" hidden></div>
 
-      <section class="page active" data-page-panel="live">
-        <div class="desktop-transport">
-          <button id="desktopPlay" class="transport-action">▶ <span id="desktopPlayLabel">Play</span></button>
-          <button id="desktopStop" class="transport-action">■ Stop</button>
-          <button id="desktopClick" class="transport-action">● Click</button>
-          <div class="transport-metrics">
-            <div><span class="eyebrow">BPM</span><strong id="desktopTempo">--</strong></div>
-            <div><span class="eyebrow">BAR</span><strong id="desktopBar">--</strong></div>
-            <div><span class="eyebrow">METER</span><strong id="desktopMeter">--</strong></div>
-          </div>
-        </div>
-
-        <div class="live-grid">
-          <article class="panel live-song-panel">
-            <div class="panel-heading">
-              <div>
-                <span class="eyebrow">CURRENT SONG</span>
-                <h2 id="desktopCurrentSong">No service loaded</h2>
-                <p id="desktopCurrentMeta" class="muted compact-copy">Load a setlist to begin.</p>
-              </div>
-              <div class="song-nav">
-                <button id="desktopPrevSong" class="quiet">← Song</button>
-                <button id="desktopNextSong" class="quiet">Song →</button>
+      <section class="page active v1-live-page" data-page-panel="live">
+        <div class="v1-live-shell">
+          <aside class="performance-rail">
+            <div class="rail-block rail-current">
+              <span class="eyebrow">NOW PLAYING</span>
+              <h2 id="desktopCurrentSong">No service loaded</h2>
+              <p id="desktopCurrentMeta" class="muted compact-copy">Load a service to begin.</p>
+              <div class="rail-now-next">
+                <div>
+                  <span>NEXT SECTION</span>
+                  <strong id="desktopNextSection">—</strong>
+                </div>
               </div>
             </div>
 
-            <div class="desktop-progress"><div id="desktopProgress"></div></div>
-
-            <div class="desktop-now-next">
-              <div><span class="eyebrow">NOW</span><strong id="desktopCurrentSection">—</strong></div>
-              <div><span class="eyebrow">NEXT</span><strong id="desktopNextSection">—</strong></div>
+            <div class="rail-block rail-service">
+              <div class="rail-heading">
+                <div>
+                  <span class="eyebrow">SERVICE</span>
+                  <strong id="desktopServiceTitle">No setlist loaded</strong>
+                </div>
+                <span id="desktopServiceCount" class="counter">0</span>
+              </div>
+              <div id="desktopServiceOrder" class="rows rail-service-order"></div>
             </div>
 
-            <div class="section-step-row">
-              <button id="desktopPrevSection">← Previous Section</button>
-              <button id="desktopNextSectionBtn" class="primary">Next Section →</button>
+            <div class="rail-block rail-library">
+              <div class="rail-heading">
+                <div>
+                  <span class="eyebrow">LIBRARY</span>
+                  <strong>Songs</strong>
+                </div>
+              </div>
+              <input id="liveLibrarySearch" class="rail-search" type="search" placeholder="Search songs">
+              <div id="liveLibraryList" class="rail-library-list"></div>
             </div>
-            <div id="desktopSectionGrid" class="desktop-section-grid"></div>
-          </article>
+          </aside>
 
-          <article class="panel service-panel">
-            <div class="panel-heading">
-              <div><span class="eyebrow">SERVICE</span><h3 id="desktopServiceTitle">No setlist loaded</h3></div>
-              <span id="desktopServiceCount" class="counter">0</span>
+          <div class="performance-workspace">
+            <header class="md-bar">
+              <div class="md-song">
+                <span class="eyebrow">CURRENT</span>
+                <strong id="mdSongTitle">No service loaded</strong>
+                <span id="mdSongMeta">Waiting for service</span>
+              </div>
+
+              <div class="md-section-status">
+                <span>NEXT AT BUTTON</span>
+                <strong id="desktopCurrentSection">—</strong>
+              </div>
+
+              <div class="md-clock">
+                <strong id="mdTime">0:00.0</strong>
+                <span id="mdBarDetail">BAR --</span>
+              </div>
+
+              <div class="md-transport">
+                <button id="desktopPrevSong" class="icon-transport" title="Previous song">|◀</button>
+                <button id="desktopStop" class="icon-transport" title="Stop">■</button>
+                <button id="desktopPlay" class="transport-action md-play"><span id="desktopPlayLabel">Play</span></button>
+                <button id="desktopNextSong" class="icon-transport" title="Next song">▶|</button>
+              </div>
+
+              <div class="md-metrics">
+                <button id="desktopClick" class="metric-button"><span>CLICK</span><strong>●</strong></button>
+                <div><span>KEY</span><strong id="mdKey">--</strong></div>
+                <div><span>TEMPO</span><strong id="desktopTempo">--</strong></div>
+                <div><span>METER</span><strong id="desktopMeter">--</strong></div>
+                <span id="desktopBar" class="sr-only">--</span>
+              </div>
+            </header>
+
+            <div class="performance-command-row">
+              <div class="next-callout">
+                <span class="eyebrow">NEXT AT BUTTON</span>
+                <strong id="nextCallout">—</strong>
+              </div>
+              <div class="section-step-row v1-section-step">
+                <button id="desktopPrevSection" class="quiet">← Previous</button>
+                <button id="desktopNextSectionBtn" class="primary">Next Section →</button>
+              </div>
             </div>
-            <div id="desktopServiceOrder" class="rows"></div>
-          </article>
+
+            <div id="desktopSectionGrid" class="v1-section-strip"></div>
+            <div class="desktop-progress v1-progress" aria-hidden="true"><div id="desktopProgress"></div></div>
+
+            <section class="arrangement-stage">
+              <div class="arrangement-toolbar">
+                <div>
+                  <span class="eyebrow">ARRANGEMENT</span>
+                  <strong>Live Timeline</strong>
+                </div>
+                <div class="arrangement-toolbar-actions">
+                  <button id="timelineFit" class="quiet">Fit</button>
+                  <button id="timelineFollow" class="quiet active">Follow</button>
+                </div>
+              </div>
+              <div id="arrangementTimeline" class="arrangement-timeline">
+                <div class="timeline-empty">Open Ableton and build or sync a service to see the Arrangement.</div>
+              </div>
+            </section>
+
+            <section class="v1-mixer-panel">
+              <div class="v1-mixer-heading">
+                <div>
+                  <span class="eyebrow">MIXER</span>
+                  <strong>Tracks</strong>
+                </div>
+                <span class="muted compact-copy">Volume · mute · solo</span>
+              </div>
+              <div id="desktopMixer" class="desktop-mixer v1-mixer"></div>
+            </section>
+
+            <section class="v1-command-panel">
+              <div class="plain-command-row">
+                <input id="plainCommand" placeholder="Next section, mute BGV, load Sunday AM, set tempo to 72…">
+                <button id="plainPreview" class="primary">Preview</button>
+                <button id="plainRun" class="quiet">Run Now</button>
+              </div>
+              <div id="plainPreviewPanel" class="command-preview" hidden>
+                <div>
+                  <span class="eyebrow">PREVIEW</span>
+                  <strong id="plainPreviewSummary">—</strong>
+                  <small id="plainPreviewMeta"></small>
+                </div>
+                <div class="command-preview-actions">
+                  <button id="plainCancel" class="quiet">Cancel</button>
+                  <button id="plainApply" class="primary">Apply</button>
+                </div>
+              </div>
+              <div class="plain-examples v1-plain-examples">
+                <button data-plain="next section">Next section</button>
+                <button data-plain="next song">Next song</button>
+                <button data-plain="click on">Click on</button>
+                <button data-plain="mute guide">Mute Guide</button>
+              </div>
+            </section>
+          </div>
         </div>
-
-        <article class="panel desktop-mixer-panel">
-          <div class="panel-heading">
-            <div><span class="eyebrow">TRACK CONTROL</span><h3>Arrangement Mixer</h3></div>
-            <span class="muted compact-copy">Volume · mute · solo</span>
-          </div>
-          <div id="desktopMixer" class="desktop-mixer"></div>
-        </article>
-
-        <article class="panel plain-language-panel">
-          <div class="panel-heading">
-            <div><span class="eyebrow">PLAIN LANGUAGE</span><h3>Tell Luma Live what to do</h3></div>
-          </div>
-          <div class="plain-command-row">
-            <input id="plainCommand" placeholder="Next section, mute BGV, load Sunday AM, set tempo to 72…">
-            <button id="plainPreview" class="primary">Preview</button>
-            <button id="plainRun" class="quiet">Run Now</button>
-          </div>
-          <div id="plainPreviewPanel" class="command-preview" hidden>
-            <div>
-              <span class="eyebrow">PREVIEW</span>
-              <strong id="plainPreviewSummary">—</strong>
-              <small id="plainPreviewMeta"></small>
-            </div>
-            <div class="command-preview-actions">
-              <button id="plainCancel" class="quiet">Cancel</button>
-              <button id="plainApply" class="primary">Apply</button>
-            </div>
-          </div>
-          <div class="plain-examples">
-            <button data-plain="next section">Next section</button>
-            <button data-plain="next song">Next song</button>
-            <button data-plain="click on">Click on</button>
-            <button data-plain="mute guide">Mute Guide</button>
-          </div>
-        </article>
       </section>
 
       <section class="page" data-page-panel="busk">
