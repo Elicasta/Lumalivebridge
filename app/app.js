@@ -20,6 +20,9 @@
     sceneSignature: "",
     buskSignature: "",
     packageStatuses: {},
+    referenceStatus: null,
+    referenceTaps: [],
+    referenceCursorTime: null,
     lastBuildFolder: null
   };
 
