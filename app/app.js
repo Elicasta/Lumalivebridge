@@ -970,13 +970,22 @@
 
   function renderTransport() {
     const live = state.live || {};
+    const adapterCapabilities = Array.isArray(live.adapterCapabilities) ? live.adapterCapabilities : [];
+    const adapterReady = live.adapterVersion === "1.0.0" &&
+      ["arrangement-overview", "session-overview", "extended-busk", "detail-clip", "warp-editor"]
+        .every((name) => adapterCapabilities.includes(name));
     const readyState = $("mdReadyState");
     if (readyState) {
-      const label = live.bridgeConnected
-        ? (state.activeSetlistId ? "READY" : "CONNECTED")
-        : "OFFLINE";
+      const label = !live.bridgeConnected
+        ? "OFFLINE"
+        : !adapterReady
+          ? "UPDATE ADAPTER"
+          : state.activeSetlistId
+            ? "READY"
+            : "CONNECTED";
       readyState.textContent = label;
-      readyState.className = "md-ready-state " + (label === "READY" ? "ready" : label === "CONNECTED" ? "connected" : "offline");
+      readyState.className = "md-ready-state " +
+        (label === "READY" ? "ready" : label === "CONNECTED" ? "connected" : label === "UPDATE ADAPTER" ? "warning" : "offline");
     }
     const ctx = live.liveContext;
     $("desktopPlay").classList.toggle("active", !!live.isPlaying);
@@ -2277,7 +2286,7 @@
         return (item.sourceAls && item.stemCount > 0) || (reference && reference.sourceExists);
       }).length;
       const capabilities = Array.isArray(result.adapterCapabilities) ? result.adapterCapabilities : [];
-      const requiredBuildCapabilities = ["arrangement-audio", "transpose", "bulk-build", "extended-busk"];
+      const requiredBuildCapabilities = ["arrangement-audio", "arrangement-overview", "transpose", "bulk-build", "extended-busk", "session-overview"];
       const editorCapabilities = ["reference-editor", "detail-clip", "warp-editor"];
       const missingBuildCapabilities = requiredBuildCapabilities.filter((name) => !capabilities.includes(name));
       const missingEditorCapabilities = editorCapabilities.filter((name) => !capabilities.includes(name));
