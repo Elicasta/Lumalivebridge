@@ -1773,11 +1773,19 @@
     try {
       const result = await invoke("run_system_check");
       const packages = result.packages || [];
-      const ready = packages.filter((item) => item.sourceAls && item.stemCount > 0).length;
+      const references = result.references || [];
+      const referencesBySong = Object.fromEntries(references.map((item) => [item.songId, item]));
+      const ready = packages.filter((item) => {
+        const reference = referencesBySong[item.songId];
+        return (item.sourceAls && item.stemCount > 0) || (reference && reference.sourceExists);
+      }).length;
       const capabilities = Array.isArray(result.adapterCapabilities) ? result.adapterCapabilities : [];
       const requiredBuildCapabilities = ["arrangement-audio", "transpose", "bulk-build", "extended-busk"];
+      const editorCapabilities = ["reference-editor", "detail-clip", "warp-editor"];
       const missingBuildCapabilities = requiredBuildCapabilities.filter((name) => !capabilities.includes(name));
+      const missingEditorCapabilities = editorCapabilities.filter((name) => !capabilities.includes(name));
       const buildReady = !!result.bridgeConnected && missingBuildCapabilities.length === 0;
+      const editorReady = !!result.bridgeConnected && missingEditorCapabilities.length === 0;
       host.innerHTML =
         '<div class="check-row ' + (result.libraryWritable ? "pass" : "fail") + '"><strong>Library write access</strong><span>' + (result.libraryWritable ? "PASS" : "FAIL") + '</span></div>' +
         '<div class="check-row ' + (result.templateExists ? "pass" : "warn") + '"><strong>Church Standard.als</strong><span>' + (result.templateExists ? "FOUND" : "MISSING") + '</span></div>' +
@@ -1786,14 +1794,20 @@
           '</strong><span>' + (result.bridgeConnected ? "CONNECTED" : "OFFLINE") + '</span></div>' +
         '<div class="check-row ' + (buildReady ? "pass" : "fail") + '"><strong>Service build API</strong><span>' +
           (buildReady ? "READY" : (result.bridgeConnected ? "UPDATE MAX" : "OFFLINE")) + '</span></div>' +
-        (missingBuildCapabilities.length ? '<div class="package-check"><strong>Missing adapter capabilities</strong><small>' +
-          escapeHtml(missingBuildCapabilities.join(", ")) + '</small></div>' : '') +
-        '<div class="check-row ' + (ready === packages.length && packages.length ? "pass" : "warn") + '"><strong>Song packages</strong><span>' + ready + " / " + packages.length + ' READY</span></div>' +
-        packages.map((item) =>
-          '<div class="package-check"><strong>' + escapeHtml((state.songs.find((song) => song.id === item.songId) || {}).title || item.songId) + '</strong><small>' +
-          escapeHtml((item.sourceAls || "No ALS") + " · " + item.stemCount + " stems · " + item.cueCount + " cues") +
-          '</small></div>'
-        ).join("");
+        '<div class="check-row ' + (editorReady ? "pass" : "fail") + '"><strong>Track Editor / Warp API</strong><span>' +
+          (editorReady ? "READY" : (result.bridgeConnected ? "UPDATE MAX" : "OFFLINE")) + '</span></div>' +
+        (missingBuildCapabilities.length || missingEditorCapabilities.length ? '<div class="package-check"><strong>Missing adapter capabilities</strong><small>' +
+          escapeHtml([...new Set(missingBuildCapabilities.concat(missingEditorCapabilities))].join(", ")) + '</small></div>' : '') +
+        '<div class="check-row ' + (ready === packages.length && packages.length ? "pass" : "warn") + '"><strong>Song packages</strong><span>' + ready + " / " + packages.length + ' USABLE</span></div>' +
+        packages.map((item) => {
+          const reference = referencesBySong[item.songId];
+          const source = reference && reference.sourceExists
+            ? "reference track" + (reference.alignment ? " · grid saved" : " · needs grid")
+            : ((item.sourceAls || "No ALS") + " · " + item.stemCount + " stems");
+          return '<div class="package-check"><strong>' + escapeHtml((state.songs.find((song) => song.id === item.songId) || {}).title || item.songId) + '</strong><small>' +
+            escapeHtml(source + " · " + item.cueCount + " cues") +
+            '</small></div>';
+        }).join("");
     } catch (error) {
       host.innerHTML = '<div class="check-row fail"><strong>System check failed</strong><span>' + escapeHtml(error) + '</span></div>';
     } finally {
