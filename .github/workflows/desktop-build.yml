@@ -3,7 +3,8 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - feature/unified-luma-live
+      - main
+      - feature/luma-live-v1
     paths:
       - "src-tauri/**"
       - "app/**"
@@ -80,7 +81,7 @@ jobs:
           set -euo pipefail
           APP="src-tauri/target/release/bundle/macos/Luma Live.app"
           DMG_DIR="src-tauri/target/release/bundle/dmg"
-          DMG="$DMG_DIR/Luma-Live-0.6.0-aarch64.dmg"
+          DMG="$DMG_DIR/Luma-Live-1.0.0-aarch64.dmg"
           STAGE="$(mktemp -d)"
 
           mkdir -p "$DMG_DIR"
@@ -95,7 +96,7 @@ jobs:
       - name: Upload macOS bundles
         uses: actions/upload-artifact@v4
         with:
-          name: Luma-Live-macOS-v0.6.0
+          name: Luma-Live-macOS-v1.0.0
           path: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/macos/*.app

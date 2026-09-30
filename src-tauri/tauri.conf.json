@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Luma Live",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "identifier": "com.eccreative.lumalive",
   "build": {
     "frontendDist": "../app"
@@ -26,13 +26,24 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "category": "Music",
     "shortDescription": "Unified offline-first church live show control",
     "longDescription": "Luma Live combines Arrangement song control, Session View Busk tools, songs, setlists, plain-language commands, and a same-network remote in one local-first application.",
     "macOS": {
       "minimumSystemVersion": "12.0",
       "infoPlist": "Info.plist"
+    },
+    "resources": {
+      "../device/LumaLiveBridge.maxpat": "ableton-adapter/LumaLiveBridge.maxpat",
+      "../device/live-api.js": "ableton-adapter/live-api.js",
+      "../device/node-bridge.js": "ableton-adapter/node-bridge.js",
+      "../device/protocol.js": "ableton-adapter/protocol.js",
+      "../device/validator.js": "ableton-adapter/validator.js",
+      "../device/README.md": "ableton-adapter/README.md"
     }
   }
 }

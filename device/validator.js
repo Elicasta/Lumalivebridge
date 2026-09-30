@@ -68,6 +68,8 @@ function validateCommand(input, options = {}) {
 
   switch (input.type) {
     case "get_state":
+    case "get_arrangement_overview":
+    case "get_detail_clip_info":
       normalized = {};
       break;
 
@@ -136,8 +138,47 @@ function validateCommand(input, options = {}) {
 
     case "stop_all_clips":
     case "refresh_session":
+    case "get_session_overview":
+    case "prev_scene":
+    case "next_scene":
+    case "tap_tempo":
+    case "capture_midi":
+    case "undo":
+    case "redo":
+    case "clear_selected_clip":
+    case "duplicate_selected_clip":
+    case "double_selected_clip":
       normalized = {};
       break;
+
+    case "fire_clip": {
+      const trackIndex = integer(args.trackIndex, "fire_clip.trackIndex");
+      const sceneIndex = integer(args.sceneIndex, "fire_clip.sceneIndex");
+      if (trackIndex < 0 || sceneIndex < 0) throw new Error("fire_clip indices must be >= 0");
+      normalized = { trackIndex, sceneIndex };
+      break;
+    }
+
+    case "stop_track": {
+      const trackIndex = integer(args.trackIndex, "stop_track.trackIndex");
+      if (trackIndex < 0) throw new Error("stop_track.trackIndex must be >= 0");
+      normalized = { trackIndex };
+      break;
+    }
+
+    case "session_record": {
+      const bars = args.bars == null ? 0 : finiteNumber(args.bars, "session_record.bars");
+      if (bars < 0 || bars > 512) throw new Error("session_record.bars must be 0..512");
+      normalized = { bars };
+      break;
+    }
+
+    case "set_swing": {
+      const value = finiteNumber(args.value, "set_swing.value");
+      if (value < 0 || value > 1) throw new Error("set_swing.value must be 0..1");
+      normalized = { value };
+      break;
+    }
 
     case "create_midi_clip": {
       const lengthBeats = finiteNumber(args.lengthBeats, "create_midi_clip.lengthBeats");
@@ -213,6 +254,42 @@ function validateCommand(input, options = {}) {
           return { time, name };
         })
       };
+      break;
+    }
+
+    case "apply_detail_clip_warp": {
+      const bpm = finiteNumber(args.bpm, "apply_detail_clip_warp.bpm");
+      const numerator = integer(args.numerator, "apply_detail_clip_warp.numerator");
+      const denominator = integer(args.denominator, "apply_detail_clip_warp.denominator");
+      const warpMode = args.warpMode == null ? 6 : integer(args.warpMode, "apply_detail_clip_warp.warpMode");
+      if (bpm < 20 || bpm > 999) throw new Error("warp BPM must be between 20 and 999");
+      if (numerator < 1 || numerator > 32) throw new Error("warp numerator must be 1..32");
+      if (![1,2,4,8,16].includes(denominator)) throw new Error("warp denominator must be 1,2,4,8,16");
+      if (warpMode < 0 || warpMode > 6) throw new Error("warp mode must be 0..6");
+      if (!Array.isArray(args.markers) || args.markers.length < 2 || args.markers.length > 512) {
+        throw new Error("warp markers must contain 2..512 points");
+      }
+      normalized = {
+        bpm,
+        numerator,
+        denominator,
+        warpMode,
+        markers: args.markers.map((marker, index) => {
+          if (!isObject(marker)) throw new Error("warp marker " + index + " must be an object");
+          const sampleTime = finiteNumber(marker.sampleTime, "warp marker sampleTime");
+          const beatTime = finiteNumber(marker.beatTime, "warp marker beatTime");
+          if (sampleTime < 0 || beatTime < -1000000) throw new Error("warp marker is out of range");
+          return { sampleTime, beatTime };
+        })
+      };
+      normalized.markers.sort((a, b) => a.beatTime - b.beatTime);
+      for (let index = 1; index < normalized.markers.length; index += 1) {
+        const previous = normalized.markers[index - 1];
+        const current = normalized.markers[index];
+        if (current.beatTime <= previous.beatTime || current.sampleTime <= previous.sampleTime) {
+          throw new Error("warp markers must increase in both beat time and sample time");
+        }
+      }
       break;
     }
 

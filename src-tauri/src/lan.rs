@@ -235,6 +235,22 @@ async fn live_state(
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e))
 }
 
+async fn session_state(
+    AxumState(state): AxumState<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    authorize(&headers, &state)?;
+    let response = bridge::send("get_session_overview", json!({}))
+        .await
+        .map_err(|e| api_error(StatusCode::BAD_GATEWAY, e))?;
+    let session = response
+        .get("result")
+        .and_then(|value| value.get("session"))
+        .cloned()
+        .unwrap_or_else(|| json!({ "tracks": [], "scenes": [], "selectedClip": Value::Null }));
+    Ok(Json(json!({ "ok": true, "session": session })))
+}
+
 async fn save_song(
     AxumState(state): AxumState<AppState>,
     headers: HeaderMap,
@@ -563,6 +579,7 @@ pub async fn run_server(state: AppState) -> anyhow::Result<()> {
         .route("/api/runtime", get(runtime))
         .route("/api/library", get(library))
         .route("/api/state", get(live_state))
+        .route("/api/session", get(session_state))
         .route("/api/direct", post(direct))
         .route("/api/command/preview", post(preview_plain_command))
         .route("/api/command", post(plain_command))

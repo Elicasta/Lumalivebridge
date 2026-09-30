@@ -10,6 +10,10 @@
     runtime: null,
     live: null,
     arrangement: null,
+    arrangementOverview: null,
+    arrangementSignature: "",
+    timelineFollow: true,
+    liveLibraryQuery: "",
     activeSetlistId: null,
     editingSongId: null,
     editingSetlistId: null,
@@ -19,6 +23,7 @@
     sectionSignature: "",
     sceneSignature: "",
     buskSignature: "",
+    buskMixerSignature: "",
     packageStatuses: {},
     referenceStatus: null,
     referenceTaps: [],
@@ -30,10 +35,10 @@
   let swingTimer = null;
 
   const titles = {
-    live: ["LIVE", "Song Control"],
+    live: ["LIVE", "Performance"],
     busk: ["SESSION VIEW", "Busk"],
-    songs: ["LIBRARY", "Songs"],
-    setlists: ["SERVICES", "Setlists"],
+    songs: ["LIBRARY", "Song Editor"],
+    setlists: ["SERVICES", "Build"],
     settings: ["SYSTEM", "Settings"]
   };
 
@@ -96,10 +101,14 @@
 
 
   function go(page) {
+    document.body.dataset.page = page;
     document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === page));
     document.querySelectorAll(".page").forEach((panel) => panel.classList.toggle("active", panel.dataset.pagePanel === page));
     $("pageEyebrow").textContent = titles[page][0];
     $("pageTitle").textContent = titles[page][1];
+
+    if (page === "live") loadArrangementOverview().catch(() => {});
+    if (page === "busk") loadSessionOverview().catch(() => {});
   }
 
   document.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", () => go(item.dataset.page)));
@@ -607,6 +616,7 @@
           Math.max(0, Number(transition.bars || 0)) + '"></label>';
         detail.querySelector(".transition-bars").addEventListener("input", (event) => {
           transition.bars = Math.max(0, Number(event.target.value || 0));
+          renderBuildTimeline();
         });
       } else if (selected === "vamp") {
         const sections = song ? song.sections || [] : [];
@@ -622,7 +632,10 @@
         const picker = detail.querySelector(".transition-vamp");
         if (picker) {
           picker.value = transition.vampSectionId || "";
-          picker.addEventListener("change", () => transition.vampSectionId = picker.value || null);
+          picker.addEventListener("change", () => {
+            transition.vampSectionId = picker.value || null;
+            renderBuildTimeline();
+          });
         }
       } else if (selected === "hold") {
         detail.innerHTML = '<span class="transition-note">Stop at the song boundary. Continue when you are ready.</span>';
@@ -640,8 +653,105 @@
       }
     }
 
-    mode.addEventListener("change", renderDetail);
+    mode.addEventListener("change", () => {
+      renderDetail();
+      renderBuildTimeline();
+    });
     renderDetail();
+  }
+
+  function buildTransitionLabel(item, index) {
+    if (index >= state.draftItems.length - 1) return "END";
+    const transition = normalizeTransition(item.transition);
+    if (transition.mode === "inherit") {
+      return Number($("setlistGap").value || 0) + " BAR GAP";
+    }
+    if (transition.mode === "gap") return Number(transition.bars || 0) + " BAR GAP";
+    if (transition.mode === "segue") return "SEGUE";
+    if (transition.mode === "hold") return "HOLD";
+    if (transition.mode === "vamp") {
+      const song = state.songs.find((entry) => entry.id === item.songId);
+      const section = song && (song.sections || []).find((entry) => entry.id === transition.vampSectionId);
+      return "VAMP" + (section ? " · " + section.name.toUpperCase() : "");
+    }
+    if (transition.mode === "mashup") return Number(transition.bars || 0) + " BAR OVERLAP";
+    return transition.mode.toUpperCase();
+  }
+
+  function renderBuildTimeline() {
+    const host = $("buildTimeline");
+    if (!host) return;
+
+    host.innerHTML = "";
+    let totalBars = 0;
+    state.draftItems.forEach((item, index) => {
+      const song = state.songs.find((entry) => entry.id === item.songId);
+      if (song) totalBars += Math.max(1, Number(song.lengthBars || 0));
+
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "build-song-card";
+      card.draggable = true;
+      card.dataset.index = index;
+      card.innerHTML =
+        '<span class="build-song-index">' + String(index + 1).padStart(2, "0") + '</span>' +
+        '<strong>' + escapeHtml(song ? song.title : item.songId) + '</strong>' +
+        '<small>' + escapeHtml(song
+          ? [song.bpm + " BPM", transposeKey(song.key || "", Number(item.transposeSemitones || 0)) || song.key, song.lengthBars + " bars"].filter(Boolean).join(" · ")
+          : "Missing song") + '</small>';
+
+      card.addEventListener("click", () => {
+        const detail = $("setlistItems").querySelector('[data-draft-index="' + index + '"]');
+        if (detail) detail.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+
+      card.addEventListener("dragstart", (event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", String(index));
+        card.classList.add("dragging");
+      });
+      card.addEventListener("dragend", () => card.classList.remove("dragging"));
+      card.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        card.classList.add("drag-over");
+      });
+      card.addEventListener("dragleave", () => card.classList.remove("drag-over"));
+      card.addEventListener("drop", (event) => {
+        event.preventDefault();
+        card.classList.remove("drag-over");
+        const from = Number(event.dataTransfer.getData("text/plain"));
+        const to = Number(card.dataset.index);
+        if (!Number.isInteger(from) || !Number.isInteger(to) || from === to) return;
+        const moved = state.draftItems.splice(from, 1)[0];
+        state.draftItems.splice(to, 0, moved);
+        renderDraft();
+      });
+
+      host.appendChild(card);
+
+      if (index < state.draftItems.length - 1) {
+        const transition = normalizeTransition(item.transition);
+        const connector = document.createElement("div");
+        connector.className = "build-transition-node mode-" + transition.mode;
+        connector.innerHTML =
+          '<span>→</span><strong>' + escapeHtml(buildTransitionLabel(item, index)) + '</strong><span>→</span>';
+        host.appendChild(connector);
+
+        if (transition.mode === "inherit") totalBars += Number($("setlistGap").value || 0);
+        if (transition.mode === "gap" || transition.mode === "hold") {
+          totalBars += transition.mode === "hold"
+            ? 1
+            : Math.max(0, Number(transition.bars || 0));
+        }
+        if (transition.mode === "mashup") totalBars -= Math.max(0, Number(transition.bars || 0));
+      }
+    });
+
+    $("buildTimelineDuration").textContent = Math.max(0, totalBars) + " bars";
+    if (!state.draftItems.length) {
+      host.innerHTML = '<div class="empty">Add a song to start the service timeline.</div>';
+    }
   }
 
   function renderDraft() {
@@ -655,6 +765,7 @@
 
       const row = document.createElement("div");
       row.className = "setlist-item transition-setlist-item";
+      row.dataset.draftIndex = index;
       row.innerHTML =
         '<span class="number">' + String(index + 1).padStart(2, "0") + '</span>' +
         '<span class="item-copy"><b>' + escapeHtml(song ? song.title : item.songId) + '</b><small>' +
@@ -683,7 +794,10 @@
           ? (shift ? original + " → " + (result || original) : original + " · original")
           : (shift ? (shift > 0 ? "+" : "") + shift + " st" : "No key metadata");
       };
-      transpose.addEventListener("change", refreshEffectiveKey);
+      transpose.addEventListener("change", () => {
+        refreshEffectiveKey();
+        renderBuildTimeline();
+      });
       refreshEffectiveKey();
 
       const up = row.querySelector("[data-up]");
@@ -710,6 +824,7 @@
     if (!state.draftItems.length) {
       host.innerHTML = '<div class="empty boxed">Add songs in service order.</div>';
     }
+    renderBuildTimeline();
   }
 
   function setlistPayload() {
@@ -855,6 +970,23 @@
 
   function renderTransport() {
     const live = state.live || {};
+    const adapterCapabilities = Array.isArray(live.adapterCapabilities) ? live.adapterCapabilities : [];
+    const adapterReady = live.adapterVersion === "1.0.0" &&
+      ["arrangement-overview", "session-overview", "extended-busk", "detail-clip", "warp-editor"]
+        .every((name) => adapterCapabilities.includes(name));
+    const readyState = $("mdReadyState");
+    if (readyState) {
+      const label = !live.bridgeConnected
+        ? "OFFLINE"
+        : !adapterReady
+          ? "UPDATE ADAPTER"
+          : state.activeSetlistId
+            ? "READY"
+            : "CONNECTED";
+      readyState.textContent = label;
+      readyState.className = "md-ready-state " +
+        (label === "READY" ? "ready" : label === "CONNECTED" ? "connected" : label === "UPDATE ADAPTER" ? "warning" : "offline");
+    }
     const ctx = live.liveContext;
     $("desktopPlay").classList.toggle("active", !!live.isPlaying);
     $("desktopPlayLabel").textContent = live.isPlaying ? "Playing" : "Play";
@@ -897,6 +1029,142 @@
     $("desktopNextSectionBtn").disabled = !placement || !sections.length || currentIndex >= sections.length - 1;
   }
 
+  function formatSongClock(seconds) {
+    const safe = Math.max(0, Number(seconds) || 0);
+    const minutes = Math.floor(safe / 60);
+    const remainder = safe - minutes * 60;
+    return minutes + ":" + remainder.toFixed(1).padStart(4, "0");
+  }
+
+  function renderLibraryRail() {
+    const host = $("liveLibraryList");
+    if (!host) return;
+    const query = String(state.liveLibraryQuery || "").trim().toLowerCase();
+    const songs = state.songs
+      .filter((song) => !query || [song.title, song.artist, song.key].join(" ").toLowerCase().includes(query))
+      .slice(0, 40);
+
+    host.innerHTML = "";
+    songs.forEach((song) => {
+      const button = document.createElement("button");
+      button.className = "rail-song";
+      button.innerHTML =
+        '<strong>' + escapeHtml(song.title) + '</strong>' +
+        '<small>' + escapeHtml([song.artist, song.bpm + " BPM", song.key].filter(Boolean).join(" · ")) + '</small>';
+      button.addEventListener("click", () => {
+        const placement = state.arrangement && state.arrangement.songs
+          ? state.arrangement.songs.find((item) => item.songId === song.id)
+          : null;
+        if (placement) {
+          jumpTo(placement, null);
+        } else {
+          editSong(song);
+          go("songs");
+        }
+      });
+      host.appendChild(button);
+    });
+
+    if (!songs.length) {
+      host.innerHTML = '<div class="empty">No matching songs.</div>';
+    }
+  }
+
+  function renderArrangementTimeline() {
+    const host = $("arrangementTimeline");
+    if (!host) return;
+
+    const arrangement = state.arrangement;
+    const ctx = state.live && state.live.liveContext;
+    let placement = currentPlacement();
+    if (!placement && arrangement && arrangement.songs && arrangement.songs.length) {
+      placement = arrangement.songs[0];
+    }
+
+    if (!placement) {
+      host.innerHTML = '<div class="timeline-empty">Load or sync a service to see the Arrangement.</div>';
+      return;
+    }
+
+    const start = Number(placement.startBeat || 0);
+    const end = Number(placement.endBeat || start + 1);
+    const duration = Math.max(0.001, end - start);
+    const meter = placement.meter || { numerator: 4, denominator: 4 };
+    const beatsPerBar = Math.max(0.25, Number(meter.numerator || 4) * (4 / Number(meter.denominator || 4)));
+    const bars = Math.max(1, Math.round(duration / beatsPerBar));
+    const overviewTracks = state.arrangementOverview && Array.isArray(state.arrangementOverview.tracks)
+      ? state.arrangementOverview.tracks
+      : [];
+    const fallbackTracks = state.live && Array.isArray(state.live.tracks)
+      ? state.live.tracks.map((track) => ({ index: track.index, name: track.name, color: 0, clips: [] }))
+      : [];
+    const tracks = (overviewTracks.length ? overviewTracks : fallbackTracks).slice(0, 24);
+    const playheadBeat = Number(state.live && state.live.currentSongTime);
+    const playheadPct = Number.isFinite(playheadBeat)
+      ? Math.max(0, Math.min(100, ((playheadBeat - start) / duration) * 100))
+      : 0;
+
+    const sections = placement.sections || [];
+    let html = '<div class="timeline-canvas" style="--timeline-bars:' + bars + '">';
+
+    html += '<div class="timeline-ruler-row"><div class="timeline-track-label ruler-label">SECTIONS</div><div class="timeline-ruler">';
+    sections.forEach((section, index) => {
+      const next = sections[index + 1];
+      const sectionStart = Number(section.startBeat || start);
+      const sectionEnd = next ? Number(next.startBeat) : end;
+      const left = Math.max(0, Math.min(100, ((sectionStart - start) / duration) * 100));
+      const width = Math.max(0.8, Math.min(100 - left, ((sectionEnd - sectionStart) / duration) * 100));
+      const active = ctx && ctx.sectionId === section.id;
+      html += '<button class="timeline-section' + (active ? ' active' : '') + '" data-timeline-section="' +
+        escapeHtml(section.id) + '" style="left:' + left + '%;width:' + width + '%">' +
+        '<span>' + escapeHtml(section.name) + '</span><small>BAR ' + section.localStartBar + '</small></button>';
+    });
+    html += '<div class="timeline-playhead" style="left:' + playheadPct + '%"></div></div></div>';
+
+    tracks.forEach((track) => {
+      const clips = Array.isArray(track.clips) ? track.clips.filter((clip) =>
+        Number(clip.endTime) > start && Number(clip.startTime) < end
+      ) : [];
+      html += '<div class="timeline-track-row"><div class="timeline-track-label">' +
+        '<span>' + String(Number(track.index || 0) + 1).padStart(2, "0") + '</span>' +
+        '<strong>' + escapeHtml(track.name || ("Track " + (Number(track.index || 0) + 1))) + '</strong></div>' +
+        '<div class="timeline-lane" style="--bar-size:' + (100 / bars) + '%">';
+
+      clips.forEach((clip) => {
+        const clipStart = Math.max(start, Number(clip.startTime));
+        const clipEnd = Math.min(end, Number(clip.endTime));
+        const left = Math.max(0, ((clipStart - start) / duration) * 100);
+        const width = Math.max(0.35, ((clipEnd - clipStart) / duration) * 100);
+        const color = liveColor(clip.color, "#173e67");
+        const text = readableText(color);
+        html += '<div class="timeline-clip' + (clip.isMidiClip ? ' midi' : ' audio') + '" style="left:' + left +
+          '%;width:' + width + '%;--clip-color:' + color + ';--clip-text:' + text + '">' +
+          '<span>' + escapeHtml(clip.name || track.name || "Clip") + '</span></div>';
+      });
+
+      html += '<div class="timeline-playhead" style="left:' + playheadPct + '%"></div></div></div>';
+    });
+
+    const cuePoints = state.arrangementOverview && Array.isArray(state.arrangementOverview.cuePoints)
+      ? state.arrangementOverview.cuePoints.filter((cue) => Number(cue.time) >= start && Number(cue.time) <= end)
+      : [];
+    if (cuePoints.length) {
+      html += '<div class="timeline-cue-row"><div class="timeline-track-label"><strong>CUES</strong></div><div class="timeline-lane cue-lane">';
+      cuePoints.forEach((cue) => {
+        const left = Math.max(0, Math.min(100, ((Number(cue.time) - start) / duration) * 100));
+        html += '<div class="timeline-cue" title="' + escapeHtml(cue.name || "Cue") + '" style="left:' + left + '%"></div>';
+      });
+      html += '<div class="timeline-playhead" style="left:' + playheadPct + '%"></div></div></div>';
+    }
+
+    html += '</div>';
+    host.innerHTML = html;
+
+    host.querySelectorAll("[data-timeline-section]").forEach((button) => {
+      button.addEventListener("click", () => jumpTo(placement, button.dataset.timelineSection));
+    });
+  }
+
   function renderMixer() {
     const tracks = state.live && Array.isArray(state.live.tracks) ? state.live.tracks : [];
     const signature = tracks.map((track) => track.index + ":" + track.name).join("|");
@@ -905,25 +1173,24 @@
       state.mixerSignature = signature;
       $("desktopMixer").innerHTML = "";
       tracks.forEach((track) => {
-        const row = document.createElement("div");
-        row.className = "desktop-mixer-row";
-        row.dataset.trackIndex = track.index;
-        row.innerHTML =
-          '<span class="mix-num">' + String(track.number).padStart(2, "0") + '</span>' +
-          '<strong>' + escapeHtml(track.name) + '</strong>' +
-          '<input type="range" min="0" max="1" step="0.01" value="' +
-          (Number.isFinite(track.volume) ? track.volume : 0.85) + '">' +
+        const channel = document.createElement("div");
+        channel.className = "v1-mixer-channel";
+        channel.dataset.trackIndex = track.index;
+        channel.innerHTML =
+          '<div class="mix-channel-name"><span>' + String(track.number).padStart(2, "0") + '</span><strong>' +
+          escapeHtml(track.name) + '</strong></div>' +
+          '<div class="mix-fader-wrap"><input class="mix-fader" type="range" min="0" max="1" step="0.01" value="' +
+          (Number.isFinite(track.volume) ? track.volume : 0.85) + '"></div>' +
           '<span class="mix-value">--</span>' +
-          '<button class="mix-toggle mute">M</button>' +
-          '<button class="mix-toggle solo">S</button>';
+          '<div class="mix-channel-actions"><button class="mix-toggle mute">M</button><button class="mix-toggle solo">S</button></div>';
 
-        const slider = row.querySelector('input[type="range"]');
+        const slider = channel.querySelector('input[type="range"]');
         slider.addEventListener("pointerdown", () => slider.dataset.dragging = "1");
         const release = () => delete slider.dataset.dragging;
         slider.addEventListener("pointerup", release);
         slider.addEventListener("pointercancel", release);
         slider.addEventListener("input", () => {
-          row.querySelector(".mix-value").textContent = Math.round(Number(slider.value) * 100) + "%";
+          channel.querySelector(".mix-value").textContent = Math.round(Number(slider.value) * 100) + "%";
           clearTimeout(volumeTimers.get(track.index));
           volumeTimers.set(track.index, setTimeout(() => {
             direct({
@@ -933,14 +1200,14 @@
           }, 90));
         });
 
-        row.querySelector(".mute").addEventListener("click", () => {
+        channel.querySelector(".mute").addEventListener("click", () => {
           const current = (state.live.tracks || []).find((item) => item.index === track.index);
           direct({
             type: "set_track_mute",
             args: { track: { index: track.index }, value: !(current && current.mute) }
           }).catch(() => {});
         });
-        row.querySelector(".solo").addEventListener("click", () => {
+        channel.querySelector(".solo").addEventListener("click", () => {
           const current = (state.live.tracks || []).find((item) => item.index === track.index);
           direct({
             type: "set_track_solo",
@@ -948,21 +1215,106 @@
           }).catch(() => {});
         });
 
-        $("desktopMixer").appendChild(row);
+        $("desktopMixer").appendChild(channel);
       });
     }
 
     tracks.forEach((track) => {
-      const row = $("desktopMixer").querySelector('[data-track-index="' + track.index + '"]');
-      if (!row) return;
-      const slider = row.querySelector('input[type="range"]');
+      const channel = $("desktopMixer").querySelector('[data-track-index="' + track.index + '"]');
+      if (!channel) return;
+      const slider = channel.querySelector('input[type="range"]');
       if (!slider.dataset.dragging && Number.isFinite(track.volume)) slider.value = track.volume;
-      row.querySelector(".mix-value").textContent = Number.isFinite(track.volume) ? Math.round(track.volume * 100) + "%" : "--";
-      row.querySelector(".mute").classList.toggle("active", !!track.mute);
-      row.querySelector(".solo").classList.toggle("active", !!track.solo);
+      channel.querySelector(".mix-value").textContent = Number.isFinite(track.volume) ? Math.round(track.volume * 100) + "%" : "--";
+      channel.querySelector(".mute").classList.toggle("active", !!track.mute);
+      channel.querySelector(".solo").classList.toggle("active", !!track.solo);
     });
 
-    if (!tracks.length) $("desktopMixer").innerHTML = '<div class="empty">Open Ableton and load Luma Live.amxd to see track controls.</div>';
+    if (!tracks.length) {
+      $("desktopMixer").innerHTML = '<div class="empty">Open Ableton and load the Luma Live adapter to see mixer channels.</div>';
+    }
+  }
+
+  function renderBuskMixer(tracks) {
+    const host = $("desktopBuskMixer");
+    if (!host) return;
+
+    const signature = tracks.map((track) => track.index + ":" + track.name).join("|");
+    if (signature !== state.buskMixerSignature) {
+      state.buskMixerSignature = signature;
+      host.innerHTML = "";
+
+      tracks.forEach((track) => {
+        const channel = document.createElement("div");
+        channel.className = "v1-mixer-channel busk-mixer-channel";
+        channel.dataset.trackIndex = track.index;
+        channel.innerHTML =
+          '<div class="mix-channel-name"><span>' + String(Number(track.index) + 1).padStart(2, "0") + '</span><strong>' +
+          escapeHtml(track.name || ("Track " + (Number(track.index) + 1))) + '</strong></div>' +
+          '<div class="busk-meter-fader">' +
+            '<div class="channel-meter"><i></i></div>' +
+            '<div class="mix-fader-wrap"><input class="mix-fader" type="range" min="0" max="1" step="0.01" value="' +
+              (Number.isFinite(Number(track.volume)) ? Number(track.volume) : 0.85) + '"></div>' +
+          '</div>' +
+          '<span class="mix-value">--</span>' +
+          '<div class="mix-channel-actions"><button class="mix-toggle mute">M</button><button class="mix-toggle solo">S</button></div>';
+
+        const slider = channel.querySelector(".mix-fader");
+        slider.addEventListener("pointerdown", () => slider.dataset.dragging = "1");
+        const release = () => delete slider.dataset.dragging;
+        slider.addEventListener("pointerup", release);
+        slider.addEventListener("pointercancel", release);
+        slider.addEventListener("input", () => {
+          channel.querySelector(".mix-value").textContent = Math.round(Number(slider.value) * 100) + "%";
+          clearTimeout(volumeTimers.get("busk-" + track.index));
+          volumeTimers.set("busk-" + track.index, setTimeout(() => {
+            direct({
+              type: "set_track_volume",
+              args: { track: { index: Number(track.index) }, value: Number(slider.value) }
+            }).catch(() => {});
+          }, 90));
+        });
+
+        channel.querySelector(".mute").addEventListener("click", () => {
+          const current = state.live && state.live.session && (state.live.session.tracks || [])
+            .find((entry) => Number(entry.index) === Number(track.index));
+          direct({
+            type: "set_track_mute",
+            args: { track: { index: Number(track.index) }, value: !(current && current.mute) }
+          }).catch((error) => showError(error));
+        });
+
+        channel.querySelector(".solo").addEventListener("click", () => {
+          const current = state.live && state.live.session && (state.live.session.tracks || [])
+            .find((entry) => Number(entry.index) === Number(track.index));
+          direct({
+            type: "set_track_solo",
+            args: { track: { index: Number(track.index) }, value: !(current && current.solo) }
+          }).catch((error) => showError(error));
+        });
+
+        host.appendChild(channel);
+      });
+    }
+
+    tracks.forEach((track) => {
+      const channel = host.querySelector('[data-track-index="' + track.index + '"]');
+      if (!channel) return;
+      const slider = channel.querySelector(".mix-fader");
+      if (!slider.dataset.dragging && Number.isFinite(Number(track.volume))) slider.value = Number(track.volume);
+      channel.querySelector(".mix-value").textContent = Number.isFinite(Number(track.volume))
+        ? Math.round(Number(track.volume) * 100) + "%"
+        : "--";
+      channel.querySelector(".mute").classList.toggle("active", !!track.mute);
+      channel.querySelector(".solo").classList.toggle("active", !!track.solo);
+      const meter = channel.querySelector(".channel-meter i");
+      const level = Math.max(0, Math.min(1, Number(track.meterLevel || 0)));
+      if (meter) meter.style.height = Math.round(level * 100) + "%";
+    });
+
+    if (!tracks.length) {
+      host.innerHTML = '<div class="empty">No Session mixer tracks.</div>';
+      state.buskMixerSignature = "";
+    }
   }
 
   function renderBusk() {
@@ -982,6 +1334,8 @@
     const session = live.session || {};
     const tracks = Array.isArray(session.tracks) ? session.tracks : [];
     const scenes = Array.isArray(session.scenes) && session.scenes.length ? session.scenes : (Array.isArray(live.scenes) ? live.scenes : []);
+
+    renderBuskMixer(tracks);
 
     $("desktopBuskMeta").textContent = [
       tracks.length + " tracks",
@@ -1140,48 +1494,86 @@
   function renderLive() {
     updateBridgeStatus();
     renderTransport();
+
     const live = state.live || {};
     const ctx = live.liveContext;
     const placement = currentPlacement();
+    const librarySong = placement
+      ? state.songs.find((song) => song.id === placement.songId)
+      : null;
 
     if (!ctx) {
-      $("desktopCurrentSong").textContent = state.activeSetlistId ? "Waiting for playhead" : "No service loaded";
+      const waitingTitle = state.activeSetlistId ? "Waiting for playhead" : "No service loaded";
+      $("desktopCurrentSong").textContent = waitingTitle;
       $("desktopCurrentMeta").textContent = live.bridgeConnected
-        ? "Sync a setlist or move the playhead into a song."
-        : "Open Ableton and load Luma Live.amxd.";
+        ? "Sync a service or move the playhead into a song."
+        : "Open Ableton and load the Luma Live adapter.";
       $("desktopCurrentSection").textContent = "—";
       $("desktopNextSection").textContent = "—";
       $("desktopProgress").style.width = "0%";
       $("desktopPrevSong").disabled = true;
       $("desktopNextSong").disabled = !(state.arrangement && state.arrangement.songs && state.arrangement.songs.length);
+      $("mdSongTitle").textContent = waitingTitle;
+      $("mdSongMeta").textContent = live.bridgeConnected ? "READY FOR ARRANGEMENT" : "ABLETON OFFLINE";
+      $("mdKey").textContent = "--";
+      $("mdTime").textContent = "0:00.0";
+      $("mdBarDetail").textContent = "BAR --";
+      $("nextCallout").textContent = "—";
     } else {
-      $("desktopCurrentSong").textContent = ctx.songTitle;
-      $("desktopCurrentMeta").textContent = [
+      const effectiveKey = ctx.key ? transposeKey(ctx.key, ctx.transposeSemitones || 0) : "";
+      const meta = [
+        librarySong && librarySong.artist,
         ctx.bpm + " BPM",
-        ctx.key ? transposeKey(ctx.key, ctx.transposeSemitones || 0) : null,
+        effectiveKey,
         ctx.transposeSemitones ? ((ctx.transposeSemitones > 0 ? "+" : "") + ctx.transposeSemitones + " st") : null,
         ctx.meter ? ctx.meter.numerator + "/" + ctx.meter.denominator : null,
         state.arrangement ? "Song " + (ctx.songIndex + 1) + " of " + state.arrangement.songs.length : null
-      ].filter(Boolean).join(" · ");
+      ].filter(Boolean);
+
+      $("desktopCurrentSong").textContent = ctx.songTitle;
+      $("desktopCurrentMeta").textContent = meta.join(" · ");
       $("desktopCurrentSection").textContent = ctx.sectionName || "COUNT / PRE-ROLL";
       $("desktopNextSection").textContent = ctx.nextSectionName || "END";
       $("desktopProgress").style.width = Math.round((ctx.progress || 0) * 1000) / 10 + "%";
       $("desktopPrevSong").disabled = !ctx.previousSong;
       $("desktopNextSong").disabled = !ctx.nextSong;
+
+      $("mdSongTitle").textContent = ctx.songTitle;
+      $("mdSongMeta").textContent = meta.slice(0, 4).join(" · ");
+      $("mdKey").textContent = effectiveKey || "--";
+      $("mdBarDetail").textContent = "BAR " + ctx.currentBar + "." + (ctx.beatInBar || 1);
+      $("nextCallout").textContent = ctx.nextSectionName || "END";
+
+      const currentBeat = Number(live.currentSongTime);
+      const localBeat = placement && Number.isFinite(currentBeat)
+        ? Math.max(0, currentBeat - Number(placement.startBeat || 0))
+        : 0;
+      const seconds = localBeat * 60 / Math.max(1, Number(ctx.bpm || 120));
+      $("mdTime").textContent = formatSongClock(seconds);
     }
 
     renderSections(placement, ctx);
     renderMixer();
     renderBusk();
     renderService();
+    renderLibraryRail();
+    renderArrangementTimeline();
   }
 
   async function direct(command) {
+    const previousSession = state.live && state.live.session;
+    const previousSelectedClip = state.live && state.live.selectedClip;
     const live = await invoke("direct_live_command", { command });
     state.live = live;
+    if (previousSession) state.live.session = previousSession;
+    if (previousSelectedClip) state.live.selectedClip = previousSelectedClip;
     if ("activeSetlistId" in live) state.activeSetlistId = live.activeSetlistId;
     recomputeArrangement();
     renderLive();
+
+    if (document.body.dataset.page === "busk") {
+      loadSessionOverview().catch(() => {});
+    }
     return live;
   }
 
@@ -1239,6 +1631,7 @@
       renderSetlists();
       renderLive();
       go("live");
+      loadArrangementOverview().catch(() => {});
       showNotice(data.syncError
         ? "Setlist loaded locally. Ableton sync is pending."
         : "Setlist synced to Ableton.");
@@ -1347,6 +1740,8 @@
     renderDraft();
     recomputeArrangement();
     renderSongPackageStatus();
+    renderLibraryRail();
+    renderArrangementTimeline();
   }
 
   async function loadPackageStatuses() {
@@ -1361,6 +1756,36 @@
     renderRuntime();
   }
 
+  function renderAbletonAdapterStatus(status) {
+    const badge = $("abletonAdapterBadge");
+    const text = $("abletonAdapterStatusText");
+    if (!badge || !text) return;
+
+    $("abletonAdapterPath").textContent = status && status.path ? status.path : "Unavailable";
+    const ready = !!(status && status.ready);
+    const sourceCurrent = !!(status && status.sourceCurrent);
+    const amxdFound = !!(status && status.amxdFound);
+
+    badge.textContent = ready ? "READY" : sourceCurrent ? "NEEDS DEVICE" : "UPDATE";
+    badge.classList.toggle("ready", ready);
+    badge.classList.toggle("warn", !ready);
+
+    if (ready) {
+      text.textContent = "Adapter 1.0 source and a saved Luma Live.amxd are installed.";
+    } else if (sourceCurrent && !amxdFound) {
+      text.textContent = "Adapter source is current. Save or migrate a Luma Live.amxd into this folder once.";
+    } else {
+      text.textContent = "Install the bundled 1.0 adapter before using Live, Busk, or Track Editor.";
+    }
+  }
+
+  async function loadAbletonAdapterStatus() {
+    const status = await invoke("get_ableton_adapter_status");
+    state.adapterStatus = status || {};
+    renderAbletonAdapterStatus(state.adapterStatus);
+    return state.adapterStatus;
+  }
+
   async function loadLive() {
     try {
       const live = await invoke("get_live_state");
@@ -1372,6 +1797,42 @@
     } catch (_) {
       state.live = { bridgeConnected: false };
       renderLive();
+    }
+  }
+
+  async function loadArrangementOverview() {
+    if (!(state.live && state.live.bridgeConnected)) {
+      state.arrangementOverview = null;
+      renderArrangementTimeline();
+      return;
+    }
+    try {
+      state.arrangementOverview = await invoke("get_arrangement_overview");
+      renderArrangementTimeline();
+    } catch (_) {
+      // Keep the last good overview. Live control should not flicker because
+      // an expensive Arrangement read missed one polling window.
+    }
+  }
+
+  async function loadSessionOverview() {
+    if (!(state.live && state.live.bridgeConnected)) {
+      if (state.live) {
+        state.live.session = { tracks: [], scenes: [] };
+        state.live.selectedClip = null;
+      }
+      renderBusk();
+      return;
+    }
+
+    try {
+      const session = await invoke("get_session_overview");
+      state.live = state.live || {};
+      state.live.session = session || { tracks: [], scenes: [] };
+      state.live.selectedClip = session && session.selectedClip || null;
+      renderBusk();
+    } catch (_) {
+      // Session enumeration is secondary to transport. Keep the last good grid.
     }
   }
 
@@ -1419,6 +1880,7 @@
         buildAbleton: true
       });
       await Promise.all([loadLibrary(), loadRuntime(), loadLive()]);
+      await loadArrangementOverview().catch(() => {});
       const warnings = result.service && result.service.warnings || [];
       const serviceResult = result.service || {};
       state.lastBuildFolder = serviceResult.serviceFolder || null;
@@ -1771,7 +2233,42 @@
     }
   });
 
-  $("setlistGap").addEventListener("input", () => renderDraft());
+  $("installAbletonAdapter").addEventListener("click", async () => {
+    const button = $("installAbletonAdapter");
+    button.disabled = true;
+    button.textContent = "Installing…";
+    showError("");
+    try {
+      const status = await invoke("install_ableton_adapter");
+      state.adapterStatus = status || {};
+      renderAbletonAdapterStatus(state.adapterStatus);
+      if (status.amxdFound) {
+        showNotice(status.migratedDevice
+          ? "Luma Live 1.0 adapter installed and your existing Max device was migrated. Reload it in Ableton."
+          : "Luma Live 1.0 adapter updated. Reload Luma Live.amxd in Ableton.");
+      } else {
+        showNotice("Adapter source installed. Open the adapter folder and save LumaLiveBridge.maxpat as Luma Live.amxd once.");
+      }
+    } catch (error) {
+      showError(error);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Install / Update Adapter";
+    }
+  });
+
+  $("revealAbletonAdapter").addEventListener("click", async () => {
+    try {
+      await invoke("reveal_ableton_adapter");
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("setlistGap").addEventListener("input", () => {
+    renderDraft();
+    renderBuildTimeline();
+  });
 
   $("runSystemCheck").addEventListener("click", async () => {
     const button = $("runSystemCheck");
@@ -1789,13 +2286,15 @@
         return (item.sourceAls && item.stemCount > 0) || (reference && reference.sourceExists);
       }).length;
       const capabilities = Array.isArray(result.adapterCapabilities) ? result.adapterCapabilities : [];
-      const requiredBuildCapabilities = ["arrangement-audio", "transpose", "bulk-build", "extended-busk"];
+      const requiredBuildCapabilities = ["arrangement-audio", "arrangement-overview", "transpose", "bulk-build", "extended-busk", "session-overview"];
       const editorCapabilities = ["reference-editor", "detail-clip", "warp-editor"];
       const missingBuildCapabilities = requiredBuildCapabilities.filter((name) => !capabilities.includes(name));
       const missingEditorCapabilities = editorCapabilities.filter((name) => !capabilities.includes(name));
       const buildReady = !!result.bridgeConnected && missingBuildCapabilities.length === 0;
       const editorReady = !!result.bridgeConnected && missingEditorCapabilities.length === 0;
+      const localAdapter = result.adapterInstall || {};
       host.innerHTML =
+        '<div class="check-row ' + (localAdapter.ready ? "pass" : "fail") + '"><strong>Installed adapter files</strong><span>' + (localAdapter.ready ? "1.0 READY" : (localAdapter.sourceCurrent ? "SAVE AMXD" : "UPDATE")) + '</span></div>' +
         '<div class="check-row ' + (result.libraryWritable ? "pass" : "fail") + '"><strong>Library write access</strong><span>' + (result.libraryWritable ? "PASS" : "FAIL") + '</span></div>' +
         '<div class="check-row ' + (result.templateExists ? "pass" : "warn") + '"><strong>Church Standard.als</strong><span>' + (result.templateExists ? "FOUND" : "MISSING") + '</span></div>' +
         '<div class="check-row ' + (result.bridgeConnected ? "pass" : "fail") + '"><strong>Ableton adapter' +
@@ -1855,12 +2354,40 @@
     });
   });
 
+  $("liveLibrarySearch").addEventListener("input", (event) => {
+    state.liveLibraryQuery = event.target.value || "";
+    renderLibraryRail();
+  });
+
+  $("timelineFit").addEventListener("click", () => {
+    state.timelineFollow = false;
+    $("timelineFollow").classList.remove("active");
+    renderArrangementTimeline();
+  });
+
+  $("timelineFollow").addEventListener("click", () => {
+    state.timelineFollow = !state.timelineFollow;
+    $("timelineFollow").classList.toggle("active", state.timelineFollow);
+    renderArrangementTimeline();
+  });
+
+  go("live");
   resetSongEditor();
   resetSetlistEditor();
 
-  Promise.all([loadLibrary(), loadPackageStatuses(), loadRuntime(), loadLive(), loadPairingCode()]).catch((error) => showError(error));
+  Promise.all([loadLibrary(), loadPackageStatuses(), loadRuntime(), loadLive(), loadPairingCode(), loadAbletonAdapterStatus()])
+    .then(() => loadArrangementOverview().catch(() => {}))
+    .catch((error) => showError(error));
   setInterval(() => loadRuntime().catch(() => {}), 2500);
   setInterval(() => loadLive().catch(() => {}), 750);
+  // Arrangement clip enumeration is intentionally slower than transport polling.
+  // Live controls stay responsive while the visual timeline refreshes in the background.
+  setInterval(() => {
+    if (document.body.dataset.page === "live") loadArrangementOverview().catch(() => {});
+  }, 3000);
+  setInterval(() => {
+    if (document.body.dataset.page === "busk") loadSessionOverview().catch(() => {});
+  }, 1500);
   // The iPad plain-language surface can mutate the same SQLite library.
   // Refresh the desktop lists without requiring a relaunch.
   setInterval(() => loadLibrary().catch(() => {}), 4000);

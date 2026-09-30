@@ -33,11 +33,11 @@ Ableton Live
 
 There is no second Max-hosted iPad site and no second Max-owned song library.
 
-## v0.4.1 pages
+## Luma Live 1.0 workspaces
 
-### Song Control
+### Live
 
-Song Control is the main Arrangement performance page.
+Live is the timeline-first Arrangement performance workspace. It uses the same service map and Ableton state as the builder, with a compact service/library rail, MD transport, section strip, real Arrangement clip lanes, live playhead, cue markers, and persistent mixer.
 
 It includes:
 
@@ -96,11 +96,11 @@ Bridge @ 57
 Vamp @ 81
 ```
 
-Stems and cue assets are planned additions to this same canonical song record. They are not imported automatically yet.
+Each saved song owns a portable package under `~/Music/Luma Live/Library/Songs/` with its Ableton Project, original stems, reference audio/grid data, cue assets, and exports.
 
-### Setlists
+### Build
 
-A setlist is a service-specific ordered list of reusable songs.
+Build is a service-specific ordered timeline of reusable songs. Songs can be dragged to reorder, transposed per service instance, and connected by Gap, Segue, Hold, Vamp, or Mashup transitions.
 
 A service can be made active even when Ableton is offline. Luma stores that choice locally, builds the Arrangement map immediately, and syncs namespaced Ableton locators whenever the Max adapter is available.
 
@@ -214,30 +214,21 @@ npm run desktop:build
 
 The macOS CI build re-signs the development app with a 4096-byte code-signing page size, verifies the signature, launches the built executable for a smoke test, and only then creates the DMG.
 
-## Current boundaries
+## 1.0 runtime gates
 
-The unified architecture is implemented in the `feature/unified-luma-live` branch, but the following still require real Ableton/macOS runtime validation before being treated as finished:
+The automated gate covers Node syntax/runtime tests, Rust checks and unit tests, macOS compilation, ad-hoc signing with the required 4096-byte code-signing page size, launch smoke testing, and DMG packaging.
 
-- the new app → localhost Max → LiveAPI path
-- LiveAPI locator creation/deletion on the user's actual Ableton version
-- track volume state and fader writes
-- transport / metronome writes
-- repeated-song section navigation during a real service
-- behavior when Ableton closes/reopens while Luma Live stays open
+The final show-safety gate is real Ableton hardware/runtime validation on the target Mac:
 
-Also not implemented yet:
+- Max adapter reconnect after Ableton closes/reopens
+- Arrangement audio and MIDI creation with real media
+- stopped and playing section jumps in 4/4, 3/4, and 6/8
+- repeated-song instances
+- volume, mute, solo, Session clips/scenes, Capture MIDI, Session Record, Undo/Redo
+- Hold and Vamp behavior across a full service
+- Track Editor selected-clip reference linking and warp-marker writes
 
-- next-bar quantized section jumps
-- WAV/stem folder import
-- MultiTracks folder import
-- Guide speech section detection
-- Bonjour / mDNS discovery
-- QR pairing
-- native iPad app
-- Apple Developer signing/notarization
-- cloud sync
-
-Current section jumps are immediate transport jumps. Luma does not pretend they are musically quantized yet.
+A failed service build preflights destination tracks before clearing the existing Luma Arrangement and removes partial Luma-owned clips, locators, loop/timeline state, and bulk mode if a write fails.
 
 
 ## Portable song packages and service builds

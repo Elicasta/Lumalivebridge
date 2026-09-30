@@ -203,6 +203,59 @@ function arrangementClipAt(trackIndex, position) {
   return null;
 }
 
+function safeProp(api, property, fallback) {
+  try {
+    var value = getProp(api, property);
+    return value == null ? fallback : value;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function arrangementOverview() {
+  var tracks = [];
+  var totalTracks = count("tracks");
+
+  for (var trackIndex = 0; trackIndex < totalTracks; trackIndex++) {
+    var track = live("live_set tracks " + trackIndex);
+    var clipCount = 0;
+    try {
+      clipCount = Number(track.getcount("arrangement_clips")) || 0;
+    } catch (_) {}
+
+    var clips = [];
+    for (var clipIndex = 0; clipIndex < clipCount; clipIndex++) {
+      try {
+        var clip = live("live_set tracks " + trackIndex + " arrangement_clips " + clipIndex);
+        var start = Number(safeProp(clip, "start_time", 0));
+        var end = Number(safeProp(clip, "end_time", start));
+        if (!isFinite(start) || !isFinite(end)) continue;
+        clips.push({
+          id: Number(clip.id) || 0,
+          name: String(safeProp(clip, "name", "") || ""),
+          color: Number(safeProp(clip, "color", 0)) || 0,
+          startTime: start,
+          endTime: Math.max(start, end),
+          isAudioClip: Number(safeProp(clip, "is_audio_clip", 0)) === 1,
+          isMidiClip: Number(safeProp(clip, "is_midi_clip", 0)) === 1
+        });
+      } catch (_) {}
+    }
+
+    tracks.push({
+      index: trackIndex,
+      name: String(safeProp(track, "name", "Track " + (trackIndex + 1)) || ("Track " + (trackIndex + 1))),
+      color: Number(safeProp(track, "color", 0)) || 0,
+      clips: clips
+    });
+  }
+
+  return {
+    tracks: tracks,
+    cuePoints: cuePointState()
+  };
+}
+
 function clearLumaArrangement() {
   var removed = 0;
   var trackCount = count("tracks");
@@ -229,13 +282,281 @@ function trackState() {
       index: i,
       number: i + 1,
       name: String(getProp(track, "name") || "Track " + (i + 1)),
+      color: Number(safeProp(track, "color", 0)) || 0,
       mute: Number(getProp(track, "mute")) === 1,
       solo: Number(getProp(track, "solo")) === 1,
       volume: Number(getProp(live("live_set tracks " + i + " mixer_device volume"), "value")),
-      playingSlotIndex: Number(getProp(track, "playing_slot_index"))
+      meterLevel: Number(safeProp(track, "output_meter_level", 0)) || 0,
+      playingSlotIndex: Number(getProp(track, "playing_slot_index")),
+      firedSlotIndex: Number(safeProp(track, "fired_slot_index", -1))
     });
   }
   return tracks;
+}
+
+function normalizeWarpMarkers(value) {
+  var parsed = value;
+  if (parsed instanceof Array && parsed.length === 1) parsed = parsed[0];
+  if (typeof parsed === "string") {
+    try { parsed = JSON.parse(parsed); } catch (_) { return []; }
+  }
+  if (!parsed) return [];
+
+  var list = parsed.warp_markers || parsed.warpMarkers || parsed;
+  if (!(list instanceof Array)) return [];
+
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    var marker = list[i];
+    if (typeof marker === "string") {
+      try { marker = JSON.parse(marker); } catch (_) { continue; }
+    }
+    if (!marker) continue;
+    var sampleTime = Number(marker.sample_time != null ? marker.sample_time : marker.sampleTime);
+    var beatTime = Number(marker.beat_time != null ? marker.beat_time : marker.beatTime);
+    if (!isFinite(sampleTime) || !isFinite(beatTime)) continue;
+    out.push({ sampleTime: sampleTime, beatTime: beatTime });
+  }
+  out.sort(function(a, b) { return a.beatTime - b.beatTime; });
+  return out;
+}
+
+function samplePositionFromWarp(beatPosition, markers) {
+  if (!markers || markers.length < 2 || !isFinite(Number(beatPosition))) return null;
+  var beat = Number(beatPosition);
+  var left = markers[0];
+  var right = markers[markers.length - 1];
+
+  for (var i = 0; i < markers.length - 1; i++) {
+    if (beat >= markers[i].beatTime && beat <= markers[i + 1].beatTime) {
+      left = markers[i];
+      right = markers[i + 1];
+      break;
+    }
+  }
+
+  var beatSpan = right.beatTime - left.beatTime;
+  if (!(beatSpan > 0)) return null;
+  var ratio = (beat - left.beatTime) / beatSpan;
+  return left.sampleTime + ratio * (right.sampleTime - left.sampleTime);
+}
+
+function detailClipInfo() {
+  var clip;
+  try {
+    clip = live("live_set view detail_clip");
+  } catch (_) {
+    return null;
+  }
+
+  if (!clip || !(Number(clip.id) > 0)) return null;
+
+  var isAudio = Number(safeProp(clip, "is_audio_clip", 0)) === 1;
+  var isMidi = Number(safeProp(clip, "is_midi_clip", 0)) === 1;
+  var warping = isAudio && Number(safeProp(clip, "warping", 0)) === 1;
+  var playingPosition = Number(safeProp(clip, "playing_position", 0));
+  var sampleRate = isAudio ? Number(safeProp(clip, "sample_rate", 0)) : 0;
+  var sampleLength = isAudio ? Number(safeProp(clip, "sample_length", 0)) : 0;
+  var markers = isAudio ? normalizeWarpMarkers(safeProp(clip, "warp_markers", null)) : [];
+  var samplePositionSeconds = null;
+
+  if (isAudio && isFinite(playingPosition)) {
+    if (warping) samplePositionSeconds = samplePositionFromWarp(playingPosition, markers);
+    else samplePositionSeconds = Math.max(0, playingPosition);
+  }
+
+  return {
+    id: Number(clip.id) || 0,
+    name: String(safeProp(clip, "name", "") || ""),
+    filePath: isAudio ? String(safeProp(clip, "file_path", "") || "") : "",
+    isAudioClip: isAudio,
+    isMidiClip: isMidi,
+    isArrangementClip: Number(safeProp(clip, "is_arrangement_clip", 0)) === 1,
+    isSessionClip: Number(safeProp(clip, "is_session_clip", 0)) === 1,
+    isPlaying: Number(safeProp(clip, "is_playing", 0)) === 1,
+    playingPosition: isFinite(playingPosition) ? playingPosition : 0,
+    samplePositionSeconds: samplePositionSeconds,
+    sampleRate: isFinite(sampleRate) ? sampleRate : 0,
+    sampleLength: isFinite(sampleLength) ? sampleLength : 0,
+    sampleLengthSeconds: sampleRate > 0 && sampleLength >= 0 ? sampleLength / sampleRate : null,
+    startTime: Number(safeProp(clip, "start_time", 0)) || 0,
+    endTime: Number(safeProp(clip, "end_time", 0)) || 0,
+    warping: !!warping,
+    warpMode: isAudio ? Number(safeProp(clip, "warp_mode", 0)) || 0 : null,
+    warpMarkers: markers
+  };
+}
+
+function applyDetailClipWarp(args) {
+  var clip = live("live_set view detail_clip");
+  if (!clip || !(Number(clip.id) > 0)) throw new Error("Select an audio clip in Ableton first");
+  if (Number(safeProp(clip, "is_audio_clip", 0)) !== 1) {
+    throw new Error("The selected Ableton clip is not an audio clip");
+  }
+
+  clip.set("signature_numerator", Number(args.numerator));
+  clip.set("signature_denominator", Number(args.denominator));
+  clip.set("warping", 1);
+  clip.set("warp_mode", Number(args.warpMode));
+
+  var existing = normalizeWarpMarkers(safeProp(clip, "warp_markers", null));
+  for (var index = existing.length - 1; index >= 0; index--) {
+    try {
+      clip.call("remove_warp_marker", Number(existing[index].beatTime));
+    } catch (_) {}
+  }
+
+  var applied = 0;
+  for (var markerIndex = 0; markerIndex < args.markers.length; markerIndex++) {
+    var marker = args.markers[markerIndex];
+    var markerJson = JSON.stringify({
+      sample_time: Number(marker.sampleTime),
+      beat_time: Number(marker.beatTime)
+    });
+    clip.call("add_warp_marker", [markerJson]);
+    applied += 1;
+  }
+
+  return {
+    applied: applied,
+    bpm: Number(args.bpm),
+    detailClip: detailClipInfo()
+  };
+}
+
+function highlightedSlotInfo() {
+  var highlighted;
+  try {
+    highlighted = live("live_set view highlighted_clip_slot");
+  } catch (_) {
+    return null;
+  }
+
+  var highlightedId = Number(highlighted.id) || 0;
+  if (!highlightedId) return null;
+
+  var sceneCount = count("scenes");
+  var trackCount = count("tracks");
+  for (var trackIndex = 0; trackIndex < trackCount; trackIndex++) {
+    for (var sceneIndex = 0; sceneIndex < sceneCount; sceneIndex++) {
+      var slot = live("live_set tracks " + trackIndex + " clip_slots " + sceneIndex);
+      if ((Number(slot.id) || 0) !== highlightedId) continue;
+
+      var hasClip = Number(safeProp(slot, "has_clip", 0)) === 1;
+      var detail = {
+        trackIndex: trackIndex,
+        sceneIndex: sceneIndex,
+        hasClip: hasClip,
+        slotId: highlightedId
+      };
+      if (hasClip) {
+        var clip = live("live_set tracks " + trackIndex + " clip_slots " + sceneIndex + " clip");
+        detail.clipId = Number(clip.id) || 0;
+        detail.name = String(safeProp(clip, "name", "") || "");
+        detail.color = Number(safeProp(clip, "color", 0)) || 0;
+        detail.isMidiClip = Number(safeProp(clip, "is_midi_clip", 0)) === 1;
+        detail.isAudioClip = Number(safeProp(clip, "is_audio_clip", 0)) === 1;
+        detail.isPlaying = Number(safeProp(clip, "is_playing", 0)) === 1;
+        detail.isRecording = Number(safeProp(clip, "is_recording", 0)) === 1;
+      }
+      return detail;
+    }
+  }
+  return null;
+}
+
+function sessionOverview() {
+  var set = live("live_set");
+  var sceneCount = count("scenes");
+  var trackCount = count("tracks");
+  var selected = highlightedSlotInfo();
+  var scenes = [];
+  var tracks = [];
+
+  for (var sceneIndex = 0; sceneIndex < sceneCount; sceneIndex++) {
+    var scene = live("live_set scenes " + sceneIndex);
+    scenes.push({
+      index: sceneIndex,
+      number: sceneIndex + 1,
+      name: String(safeProp(scene, "name", "Scene " + (sceneIndex + 1)) || ("Scene " + (sceneIndex + 1))),
+      color: Number(safeProp(scene, "color", 0)) || 0,
+      isTriggered: Number(safeProp(scene, "is_triggered", 0)) === 1,
+      tempoEnabled: Number(safeProp(scene, "tempo_enabled", 0)) === 1,
+      tempo: Number(safeProp(scene, "tempo", 0)) || 0
+    });
+  }
+
+  for (var trackIndex = 0; trackIndex < trackCount; trackIndex++) {
+    var track = live("live_set tracks " + trackIndex);
+    var clips = [];
+    for (var slotIndex = 0; slotIndex < sceneCount; slotIndex++) {
+      var slot = live("live_set tracks " + trackIndex + " clip_slots " + slotIndex);
+      var hasClip = Number(safeProp(slot, "has_clip", 0)) === 1;
+      var clipState = {
+        sceneIndex: slotIndex,
+        hasClip: hasClip
+      };
+      if (hasClip) {
+        var clip = live("live_set tracks " + trackIndex + " clip_slots " + slotIndex + " clip");
+        clipState.name = String(safeProp(clip, "name", "") || "");
+        clipState.color = Number(safeProp(clip, "color", 0)) || 0;
+        clipState.isPlaying = Number(safeProp(clip, "is_playing", 0)) === 1;
+        clipState.isTriggered = Number(safeProp(clip, "is_triggered", 0)) === 1;
+        clipState.isRecording = Number(safeProp(clip, "is_recording", 0)) === 1;
+        clipState.isMidiClip = Number(safeProp(clip, "is_midi_clip", 0)) === 1;
+      }
+      clips.push(clipState);
+    }
+
+    tracks.push({
+      index: trackIndex,
+      number: trackIndex + 1,
+      name: String(safeProp(track, "name", "Track " + (trackIndex + 1)) || ("Track " + (trackIndex + 1))),
+      color: Number(safeProp(track, "color", 0)) || 0,
+      playingSlotIndex: Number(safeProp(track, "playing_slot_index", -1)),
+      firedSlotIndex: Number(safeProp(track, "fired_slot_index", -1)),
+      mute: Number(safeProp(track, "mute", 0)) === 1,
+      solo: Number(safeProp(track, "solo", 0)) === 1,
+      volume: Number(safeProp(live("live_set tracks " + trackIndex + " mixer_device volume"), "value", 0.85)),
+      meterLevel: Number(safeProp(track, "output_meter_level", 0)) || 0,
+      clips: clips
+    });
+  }
+
+  return {
+    tempo: Number(safeProp(set, "tempo", 120)),
+    scenes: scenes,
+    tracks: tracks,
+    selectedClip: selected
+  };
+}
+
+function activeSessionSceneIndex() {
+  var trackCount = count("tracks");
+  for (var i = 0; i < trackCount; i++) {
+    var index = Number(safeProp(live("live_set tracks " + i), "playing_slot_index", -1));
+    if (index >= 0) return index;
+  }
+
+  try {
+    var selectedScene = live("live_set view selected_scene");
+    var selectedId = Number(selectedScene.id) || 0;
+    var sceneCount = count("scenes");
+    for (var sceneIndex = 0; sceneIndex < sceneCount; sceneIndex++) {
+      if ((Number(live("live_set scenes " + sceneIndex).id) || 0) === selectedId) return sceneIndex;
+    }
+  } catch (_) {}
+
+  return 0;
+}
+
+function fireAdjacentScene(delta) {
+  var total = count("scenes");
+  if (!total) throw new Error("No Session scenes are available");
+  var current = activeSessionSceneIndex();
+  var target = Math.max(0, Math.min(total - 1, current + Number(delta)));
+  live("live_set scenes " + target).call("fire");
+  return { sceneIndex: target };
 }
 
 function snapshot() {
@@ -259,6 +580,11 @@ function snapshot() {
     isPlaying: Number(getProp(set, "is_playing")) === 1,
     metronome: Number(getProp(set, "metronome")) === 1,
     currentSongTime: Number(getProp(set, "current_song_time")),
+    sessionRecord: Number(safeProp(set, "session_record", 0)) === 1,
+    swingAmount: Number(safeProp(set, "swing_amount", 0)) || 0,
+    canCaptureMidi: Number(safeProp(set, "can_capture_midi", 0)) === 1,
+    canUndo: Number(safeProp(set, "can_undo", 0)) === 1,
+    canRedo: Number(safeProp(set, "can_redo", 0)) === 1,
     activeSceneIndex: activeScene,
     scenes: sceneState(),
     tracks: tracks
@@ -442,6 +768,20 @@ function execute(command) {
     return { state: snapshot() };
   }
 
+  if (type === "get_arrangement_overview") {
+    return { overview: arrangementOverview() };
+  }
+
+  if (type === "get_detail_clip_info") {
+    var detailInfo = detailClipInfo();
+    if (!detailInfo) throw new Error("Select a clip in Ableton first");
+    return { detailClip: detailInfo, selectedClip: detailInfo };
+  }
+
+  if (type === "apply_detail_clip_warp") {
+    return applyDetailClipWarp(args);
+  }
+
   if (type === "create_track") {
     var before = count("tracks");
     var index = args.index === undefined ? -1 : Number(args.index);
@@ -517,6 +857,102 @@ function execute(command) {
 
   if (type === "refresh_session") {
     return { state: snapshot() };
+  }
+
+  if (type === "get_session_overview") {
+    return { session: sessionOverview() };
+  }
+
+  if (type === "fire_clip") {
+    var fireTrackIndex = Number(args.trackIndex);
+    var fireSceneIndex = Number(args.sceneIndex);
+    if (fireTrackIndex < 0 || fireTrackIndex >= count("tracks")) throw new Error("track index out of range");
+    if (fireSceneIndex < 0 || fireSceneIndex >= count("scenes")) throw new Error("scene index out of range");
+    var fireSlot = live("live_set tracks " + fireTrackIndex + " clip_slots " + fireSceneIndex);
+    if (Number(safeProp(fireSlot, "has_clip", 0)) !== 1) {
+      throw new Error("target clip slot is empty");
+    }
+    fireSlot.call("fire");
+    return { trackIndex: fireTrackIndex, sceneIndex: fireSceneIndex };
+  }
+
+  if (type === "stop_track") {
+    var stopTrackIndex = Number(args.trackIndex);
+    if (stopTrackIndex < 0 || stopTrackIndex >= count("tracks")) throw new Error("track index out of range");
+    live("live_set tracks " + stopTrackIndex).call("stop_all_clips");
+    return { trackIndex: stopTrackIndex };
+  }
+
+  if (type === "prev_scene") {
+    return fireAdjacentScene(-1);
+  }
+
+  if (type === "next_scene") {
+    return fireAdjacentScene(1);
+  }
+
+  if (type === "tap_tempo") {
+    set.call("tap_tempo");
+    return { tempo: Number(safeProp(set, "tempo", 120)) };
+  }
+
+  if (type === "capture_midi") {
+    if (Number(safeProp(set, "can_capture_midi", 0)) !== 1) {
+      throw new Error("No capturable MIDI is available");
+    }
+    set.call("capture_midi", 0);
+    return {};
+  }
+
+  if (type === "session_record") {
+    var recordBars = Number(args.bars || 0);
+    if (recordBars > 0) {
+      var recordBeatsPerBar = Number(safeProp(set, "signature_numerator", 4)) *
+        (4 / Math.max(1, Number(safeProp(set, "signature_denominator", 4))));
+      set.call("trigger_session_record", recordBars * recordBeatsPerBar);
+    } else {
+      set.call("trigger_session_record");
+    }
+    return { sessionRecord: Number(safeProp(set, "session_record", 0)) === 1 };
+  }
+
+  if (type === "undo") {
+    if (Number(safeProp(set, "can_undo", 0)) !== 1) throw new Error("Nothing to undo");
+    set.call("undo");
+    return {};
+  }
+
+  if (type === "redo") {
+    if (Number(safeProp(set, "can_redo", 0)) !== 1) throw new Error("Nothing to redo");
+    set.call("redo");
+    return {};
+  }
+
+  if (type === "clear_selected_clip") {
+    var clearSelected = highlightedSlotInfo();
+    if (!clearSelected || !clearSelected.hasClip) throw new Error("Select a Session clip first");
+    live("live_set tracks " + clearSelected.trackIndex + " clip_slots " + clearSelected.sceneIndex).call("delete_clip");
+    return { trackIndex: clearSelected.trackIndex, sceneIndex: clearSelected.sceneIndex };
+  }
+
+  if (type === "duplicate_selected_clip") {
+    var duplicateSelected = highlightedSlotInfo();
+    if (!duplicateSelected || !duplicateSelected.hasClip) throw new Error("Select a Session clip first");
+    live("live_set tracks " + duplicateSelected.trackIndex).call("duplicate_clip_slot", duplicateSelected.sceneIndex);
+    return { trackIndex: duplicateSelected.trackIndex, sceneIndex: duplicateSelected.sceneIndex };
+  }
+
+  if (type === "double_selected_clip") {
+    var doubleSelected = highlightedSlotInfo();
+    if (!doubleSelected || !doubleSelected.hasClip) throw new Error("Select a Session clip first");
+    if (!doubleSelected.isMidiClip) throw new Error("Double Loop is available for MIDI clips only");
+    live("live_set tracks " + doubleSelected.trackIndex + " clip_slots " + doubleSelected.sceneIndex + " clip").call("duplicate_loop");
+    return { trackIndex: doubleSelected.trackIndex, sceneIndex: doubleSelected.sceneIndex };
+  }
+
+  if (type === "set_swing") {
+    set.set("swing_amount", Number(args.value));
+    return { value: Number(safeProp(set, "swing_amount", args.value)) };
   }
 
   if (type === "create_midi_clip") {
@@ -600,8 +1036,14 @@ function execute(command) {
   if (type === "jump_to_time") {
     cancelQueuedJump();
     releaseServiceLoop();
-    set.set("current_song_time", Number(args.time));
-    return { time: Number(args.time) };
+    var jumpTarget = Number(args.time);
+    set.set("current_song_time", jumpTarget);
+    var observedTime = Number(getProp(set, "current_song_time"));
+    return {
+      time: jumpTarget,
+      observedTime: isFinite(observedTime) ? observedTime : jumpTarget,
+      isPlaying: Number(getProp(set, "is_playing")) === 1
+    };
   }
 
   if (type === "queue_jump_to_time") {
