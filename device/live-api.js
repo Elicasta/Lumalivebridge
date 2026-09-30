@@ -719,6 +719,102 @@ function execute(command) {
     return { state: snapshot() };
   }
 
+  if (type === "get_session_overview") {
+    return { session: sessionOverview() };
+  }
+
+  if (type === "fire_clip") {
+    var fireTrackIndex = Number(args.trackIndex);
+    var fireSceneIndex = Number(args.sceneIndex);
+    if (fireTrackIndex < 0 || fireTrackIndex >= count("tracks")) throw new Error("track index out of range");
+    if (fireSceneIndex < 0 || fireSceneIndex >= count("scenes")) throw new Error("scene index out of range");
+    var fireSlot = live("live_set tracks " + fireTrackIndex + " clip_slots " + fireSceneIndex);
+    if (Number(safeProp(fireSlot, "has_clip", 0)) !== 1) {
+      throw new Error("target clip slot is empty");
+    }
+    fireSlot.call("fire");
+    return { trackIndex: fireTrackIndex, sceneIndex: fireSceneIndex };
+  }
+
+  if (type === "stop_track") {
+    var stopTrackIndex = Number(args.trackIndex);
+    if (stopTrackIndex < 0 || stopTrackIndex >= count("tracks")) throw new Error("track index out of range");
+    live("live_set tracks " + stopTrackIndex).call("stop_all_clips");
+    return { trackIndex: stopTrackIndex };
+  }
+
+  if (type === "prev_scene") {
+    return fireAdjacentScene(-1);
+  }
+
+  if (type === "next_scene") {
+    return fireAdjacentScene(1);
+  }
+
+  if (type === "tap_tempo") {
+    set.call("tap_tempo");
+    return { tempo: Number(safeProp(set, "tempo", 120)) };
+  }
+
+  if (type === "capture_midi") {
+    if (Number(safeProp(set, "can_capture_midi", 0)) !== 1) {
+      throw new Error("No capturable MIDI is available");
+    }
+    set.call("capture_midi", 0);
+    return {};
+  }
+
+  if (type === "session_record") {
+    var recordBars = Number(args.bars || 0);
+    if (recordBars > 0) {
+      var recordBeatsPerBar = Number(safeProp(set, "signature_numerator", 4)) *
+        (4 / Math.max(1, Number(safeProp(set, "signature_denominator", 4))));
+      set.call("trigger_session_record", recordBars * recordBeatsPerBar);
+    } else {
+      set.call("trigger_session_record");
+    }
+    return { sessionRecord: Number(safeProp(set, "session_record", 0)) === 1 };
+  }
+
+  if (type === "undo") {
+    if (Number(safeProp(set, "can_undo", 0)) !== 1) throw new Error("Nothing to undo");
+    set.call("undo");
+    return {};
+  }
+
+  if (type === "redo") {
+    if (Number(safeProp(set, "can_redo", 0)) !== 1) throw new Error("Nothing to redo");
+    set.call("redo");
+    return {};
+  }
+
+  if (type === "clear_selected_clip") {
+    var clearSelected = highlightedSlotInfo();
+    if (!clearSelected || !clearSelected.hasClip) throw new Error("Select a Session clip first");
+    live("live_set tracks " + clearSelected.trackIndex + " clip_slots " + clearSelected.sceneIndex).call("delete_clip");
+    return { trackIndex: clearSelected.trackIndex, sceneIndex: clearSelected.sceneIndex };
+  }
+
+  if (type === "duplicate_selected_clip") {
+    var duplicateSelected = highlightedSlotInfo();
+    if (!duplicateSelected || !duplicateSelected.hasClip) throw new Error("Select a Session clip first");
+    live("live_set tracks " + duplicateSelected.trackIndex).call("duplicate_clip_slot", duplicateSelected.sceneIndex);
+    return { trackIndex: duplicateSelected.trackIndex, sceneIndex: duplicateSelected.sceneIndex };
+  }
+
+  if (type === "double_selected_clip") {
+    var doubleSelected = highlightedSlotInfo();
+    if (!doubleSelected || !doubleSelected.hasClip) throw new Error("Select a Session clip first");
+    if (!doubleSelected.isMidiClip) throw new Error("Double Loop is available for MIDI clips only");
+    live("live_set tracks " + doubleSelected.trackIndex + " clip_slots " + doubleSelected.sceneIndex + " clip").call("duplicate_loop");
+    return { trackIndex: doubleSelected.trackIndex, sceneIndex: doubleSelected.sceneIndex };
+  }
+
+  if (type === "set_swing") {
+    set.set("swing_amount", Number(args.value));
+    return { value: Number(safeProp(set, "swing_amount", args.value)) };
+  }
+
   if (type === "create_midi_clip") {
     var clipTrack = targetIndex("tracks", args.track);
     var clipScene = targetIndex("scenes", args.scene);
