@@ -84,18 +84,39 @@ pub async fn jump_to_time(target: f64) -> Result<Value, String> {
         return Err("Invalid Ableton song position".into());
     }
 
-    send("jump_to_time", json!({ "time": target })).await?;
+    let response = send("jump_to_time", json!({ "time": target })).await?;
 
-    let mut last_position: Option<f64> = None;
-    // LiveAPI position updates can lag slightly while Ableton is rebuilding clips or
-    // refreshing a larger service. Give the adapter a full second before declaring
-    // a real navigation failure instead of producing a false negative after ~280 ms.
-    for _ in 0..20 {
+    // Read-back happens inside the Max LiveAPI call before the command returns.
+    // This is the strongest acknowledgement we can get from Live and avoids a
+    // false failure while transport is running past the requested beat.
+    let observed = response
+        .get("result")
+        .and_then(|value| value.get("observedTime"))
+        .and_then(Value::as_f64);
+    if observed
+        .map(|value| (value - target).abs() <= 0.25)
+        .unwrap_or(false)
+    {
+        return state().await;
+    }
+
+    let was_playing = response
+        .get("result")
+        .and_then(|value| value.get("isPlaying"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    let mut last_position: Option<f64> = observed;
+    // When transport is rolling, the playhead immediately advances after the
+    // jump. Accept a small forward window on the first fresh state rather than
+    // requiring it to remain within 0.05 beat of the target.
+    for attempt in 0..20 {
         tokio::time::sleep(Duration::from_millis(50)).await;
         let current = state().await?;
         last_position = current.get("currentSongTime").and_then(Value::as_f64);
+        let tolerance = if was_playing && attempt < 4 { 1.0 } else { 0.08 };
         let reached = last_position
-            .map(|value| (value - target).abs() <= 0.05)
+            .map(|value| value >= target - 0.08 && value <= target + tolerance)
             .unwrap_or(false);
         if reached {
             return Ok(current);
@@ -113,6 +134,6 @@ pub async fn jump_to_time(target: f64) -> Result<Value, String> {
         .unwrap_or_else(|| "no position".into());
 
     Err(format!(
-        "Ableton did not reach beat {target:.3}. Adapter v{version} reported {reported} after 1s. If the playhead did not move, reload the current Luma Live5 Max adapter; if it moved but this still appears, run Settings → Run Full Check."
+        "Ableton did not reach beat {target:.3}. Adapter v{version} reported {reported} after verification. If the playhead did not move, reload the current Luma Live5 Max adapter; if it moved but this still appears, run Settings → Run Full Check."
     ))
 }
