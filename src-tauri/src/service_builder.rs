@@ -1,5 +1,6 @@
 use crate::arrangement::Arrangement;
 use crate::models::{Setlist, Song};
+use crate::reference_audio;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -182,7 +183,7 @@ fn default_track(role: &str) -> &'static str {
 fn role_is_transposable(role: &str) -> bool {
     matches!(
         role.trim().to_lowercase().as_str(),
-        "bass" | "keys" | "guitars" | "bgv" | "extra1" | "extra2"
+        "bass" | "keys" | "guitars" | "bgv" | "extra1" | "extra2" | "reference"
     )
 }
 
@@ -354,6 +355,7 @@ pub fn ensure_song_package(root: &Path, song: &Song) -> Result<PathBuf, String> 
     fs::create_dir_all(package.join("Audio").join("Original")).map_err(|e| e.to_string())?;
     fs::create_dir_all(package.join("Cues")).map_err(|e| e.to_string())?;
     fs::create_dir_all(package.join("Exports")).map_err(|e| e.to_string())?;
+    fs::create_dir_all(package.join("Reference").join("Original")).map_err(|e| e.to_string())?;
 
     let manifest_path = package.join("song.json");
     let mut manifest = if manifest_path.exists() {
@@ -567,11 +569,11 @@ pub fn build_service_folder(
         let collected = songs_root.join(format!("{:02} - {}", index + 1, safe_component(&song.title)));
         copy_tree(&package, &collected)?;
 
-        if manifest.stems.is_empty() {
+        let reference_status = reference_audio::status(root, song)?;
+        if manifest.stems.is_empty() && !reference_status.source_exists {
             warnings.push(format!(
-                "{} has no detected stems yet. Drop its audio files into {}/Audio.",
-                song.title,
-                package.to_string_lossy()
+                "{} has no detected stems or usable reference track yet.",
+                song.title
             ));
         }
 
@@ -600,6 +602,38 @@ pub fn build_service_folder(
                 } else {
                     0
                 },
+            });
+        }
+
+        if manifest.stems.is_empty() && reference_status.source_exists {
+            let source = reference_audio::source_path(root, song)?
+                .ok_or_else(|| format!("{} reference audio is missing", song.title))?;
+            let collected_reference_dir = collected.join("Reference").join("Original");
+            let collected_path = if reference_status
+                .source
+                .as_ref()
+                .map(|source| source.external)
+                .unwrap_or(false)
+            {
+                reference_audio::copy_external_reference_into(root, song, &collected_reference_dir)?
+                    .ok_or_else(|| format!("{} reference audio could not be collected", song.title))?
+            } else {
+                let relative = source
+                    .strip_prefix(&package)
+                    .map_err(|_| format!("{} reference audio is outside its package", song.title))?;
+                collected.join(relative)
+            };
+
+            audio.push(ServiceAudioPlacement {
+                song_id: song.id.clone(),
+                instance_id: item.id.clone(),
+                role: "reference".into(),
+                track: "REFERENCE".into(),
+                source_path: source.to_string_lossy().to_string(),
+                collected_path: collected_path.to_string_lossy().to_string(),
+                start_beat: placement.start_beat,
+                clip_name: format!("LL|{}|REFERENCE", song.title),
+                transpose_semitones: item.transpose_semitones,
             });
         }
 
