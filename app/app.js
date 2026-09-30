@@ -406,6 +406,7 @@
         .map((marker) => Number(marker.sampleTime));
       state.referenceCursorTime = null;
       renderReferenceEditor();
+      renderSongPackageStatus();
     } catch (error) {
       state.referenceStatus = null;
       renderReferenceEditor();
@@ -1567,6 +1568,7 @@
       state.referenceTaps = [];
       state.referenceCursorTime = null;
       renderReferenceEditor();
+      renderSongPackageStatus();
       showNotice("Linked the selected Ableton audio clip without copying it.");
     } catch (error) {
       showError(error);
@@ -1581,6 +1583,7 @@
       state.referenceTaps = [];
       state.referenceCursorTime = null;
       renderReferenceEditor();
+      renderSongPackageStatus();
       showNotice("Reference audio imported into this song package.");
     } catch (error) {
       if (!String(error).toLowerCase().includes("cancel")) showError(error);
