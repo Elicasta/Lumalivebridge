@@ -738,22 +738,25 @@ async fn build_service(
                 ));
             }
 
+            // Preflight every destination track before clearing the current Luma
+            // Arrangement. A stale track with the right name but wrong type, or a
+            // frozen track, must fail while the previous show is still intact.
+            let mut ensured = std::collections::HashSet::new();
+            for placement in &result.audio {
+                if ensured.insert(placement.track.clone()) {
+                    bridge::send(
+                        "ensure_track",
+                        json!({ "kind": "audio", "name": placement.track }),
+                    )
+                    .await?;
+                }
+            }
+            bridge::send("ensure_track", json!({ "kind": "midi", "name": "LIGHTING" })).await?;
+            bridge::send("ensure_track", json!({ "kind": "midi", "name": "MIDI / CUES" })).await?;
+
             bridge::send("begin_bulk_update", json!({})).await?;
             let write_result: Result<(), String> = async {
                 bridge::send("clear_luma_arrangement", json!({})).await?;
-
-                let mut ensured = std::collections::HashSet::new();
-                for placement in &result.audio {
-                    if ensured.insert(placement.track.clone()) {
-                        bridge::send(
-                            "ensure_track",
-                            json!({ "kind": "audio", "name": placement.track }),
-                        )
-                        .await?;
-                    }
-                }
-                bridge::send("ensure_track", json!({ "kind": "midi", "name": "LIGHTING" })).await?;
-                bridge::send("ensure_track", json!({ "kind": "midi", "name": "MIDI / CUES" })).await?;
 
                 let points: Vec<Value> = arrangement
                     .markers
@@ -833,18 +836,58 @@ async fn build_service(
             }
             .await;
 
-            let finish_result = bridge::send("end_bulk_update", json!({})).await;
-            write_result?;
-            finish_result?;
-            Ok(())
+            match write_result {
+                Ok(()) => {
+                    bridge::send("end_bulk_update", json!({})).await?;
+                    Ok(())
+                }
+                Err(error) => {
+                    // A failed build must never leave a half-programmed show behind.
+                    // Remove only Luma-owned Arrangement clips/locators, stop any
+                    // transition timeline/loop, and always leave bulk mode.
+                    let mut cleanup_errors = Vec::new();
+
+                    if let Err(cleanup) = bridge::send("clear_luma_arrangement", json!({})).await {
+                        cleanup_errors.push(format!("clips: {cleanup}"));
+                    }
+                    if let Err(cleanup) = bridge::send(
+                        "sync_cue_points",
+                        json!({ "replace": true, "points": Vec::<Value>::new() }),
+                    )
+                    .await
+                    {
+                        cleanup_errors.push(format!("locators: {cleanup}"));
+                    }
+                    if let Err(cleanup) = bridge::send(
+                        "configure_service_timeline",
+                        json!({ "songs": Vec::<Value>::new(), "transitions": Vec::<Value>::new() }),
+                    )
+                    .await
+                    {
+                        cleanup_errors.push(format!("timeline: {cleanup}"));
+                    }
+                    if let Err(cleanup) = bridge::send("end_bulk_update", json!({})).await {
+                        cleanup_errors.push(format!("bulk mode: {cleanup}"));
+                    }
+
+                    if cleanup_errors.is_empty() {
+                        Err(format!(
+                            "Ableton service build failed and partial Luma data was removed: {error}"
+                        ))
+                    } else {
+                        Err(format!(
+                            "Ableton service build failed: {error}. Cleanup also reported: {}",
+                            cleanup_errors.join(" · ")
+                        ))
+                    }
+                }
+            }
         }
         .await;
 
         match build_result {
             Ok(()) => ableton_built = true,
             Err(error) => {
-                // Best effort: never leave an adapter in bulk mode after a failed write.
-                let _ = bridge::send("end_bulk_update", json!({})).await;
                 ableton_error = Some(error);
             }
         }
