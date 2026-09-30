@@ -153,13 +153,18 @@
       return;
     }
 
-    $("songPackageBadge").textContent = status.sourceAls && status.stemCount > 0 ? "READY" : "NEEDS FILES";
+    const referenceReady = !!(state.referenceStatus && state.referenceStatus.sourceExists);
+    const multitrackReady = !!(status.sourceAls && status.stemCount > 0);
+    $("songPackageBadge").textContent = multitrackReady || referenceReady ? "READY" : "NEEDS FILES";
     $("songPackagePath").textContent = status.packagePath || "Unavailable";
-    $("songProjectStatus").textContent = status.sourceAls || (status.projectAttached ? "Project attached · no .als found" : "Not attached");
+    $("songProjectStatus").textContent = status.sourceAls || (status.projectAttached ? "Project attached · no .als found" : (referenceReady ? "Reference-only song" : "Not attached"));
     $("songStemStatus").textContent = String(status.stemCount || 0);
     $("songCueStatus").textContent = String(status.cueCount || 0);
-    $("songPackageWarning").textContent = (status.warnings || []).join(" · ") ||
-      "Song package is ready to be collected into a service.";
+    $("songPackageWarning").textContent = multitrackReady
+      ? "Multitrack package is ready to be collected into a service."
+      : referenceReady
+        ? "Reference-track song is ready for rehearsal/service playback. Add stems later if you want multitrack control."
+        : ((status.warnings || []).join(" · ") || "Attach an Ableton Project + stems, or use a reference track.");
   }
 
   function referenceBeatsPerBar() {
@@ -391,6 +396,7 @@
       state.referenceTaps = [];
       state.referenceCursorTime = null;
       renderReferenceEditor();
+      renderSongPackageStatus();
       return;
     }
     try {
