@@ -21,7 +21,8 @@
     mixerSignature: "",
     buskSignature: "",
     performSceneSignature: "",
-    serviceSignature: ""
+    serviceSignature: "",
+    currentTab: "perform"
   };
   const volumeTimers = new Map();
 
@@ -253,11 +254,14 @@
   }
 
   async function direct(command) {
+    const previousSession = state.live && state.live.session;
     const data = await api("/api/direct", { method: "POST", body: { command } });
     if (data.state) {
       state.live = data.state;
+      if (previousSession) state.live.session = previousSession;
       renderAll();
     }
+    if (state.currentTab === "busk") refreshSession().catch(() => {});
     return data;
   }
 
@@ -686,6 +690,19 @@
     }
   }
 
+  async function refreshSession() {
+    if (state.currentTab !== "busk") return;
+    try {
+      const data = await api("/api/session");
+      state.live = state.live || {};
+      state.live.session = data.session || { tracks: [], scenes: [] };
+      state.live.selectedClip = state.live.session.selectedClip || null;
+      renderBusk();
+    } catch (error) {
+      if (state.currentTab === "busk") showError(error.message);
+    }
+  }
+
   async function refreshLibrary() {
     try {
       const data = await api("/api/library");
@@ -699,8 +716,10 @@
 
   document.querySelectorAll(".tab").forEach(button => {
     button.addEventListener("click", () => {
+      state.currentTab = button.dataset.tab;
       document.querySelectorAll(".tab").forEach(item => item.classList.toggle("active", item === button));
       document.querySelectorAll(".page").forEach(page => page.classList.toggle("active", page.dataset.page === button.dataset.tab));
+      if (state.currentTab === "busk") refreshSession().catch(() => {});
     });
   });
 
@@ -771,5 +790,6 @@
   }
 
   setInterval(() => { if (token) refreshState().catch(() => {}); }, 700);
+  setInterval(() => { if (token && state.currentTab === "busk") refreshSession().catch(() => {}); }, 1500);
   setInterval(() => { if (token) refreshLibrary().catch(() => {}); }, 5000);
 })();
