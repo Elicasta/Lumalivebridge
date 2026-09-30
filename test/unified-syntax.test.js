@@ -133,3 +133,27 @@ test("extended Busk buttons are wired", () => {
     assert.match(js, new RegExp(command));
   }
 });
+
+
+test("Track Editor exposes waveform Tap 1 and Ableton reference controls", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "app", "index.html"), "utf8");
+  const js = fs.readFileSync(path.join(__dirname, "..", "app", "app.js"), "utf8");
+
+  for (const id of [
+    "referenceWaveform",
+    "useAbletonReference",
+    "importReferenceTrack",
+    "analyzeReferenceTrack",
+    "tapDownbeat",
+    "saveReferenceAlignment",
+    "applyReferenceWarp"
+  ]) {
+    assert.match(html, new RegExp('id="' + id + '"'));
+  }
+
+  assert.match(js, /use_selected_ableton_reference/);
+  assert.match(js, /analyze_reference_track/);
+  assert.match(js, /capture_detail_clip_position/);
+  assert.match(js, /apply_reference_warp/);
+  assert.match(js, /data-section-name/);
+});
