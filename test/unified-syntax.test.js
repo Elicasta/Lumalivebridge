@@ -316,3 +316,15 @@ test("1.0 app bundle carries and manages the matching Ableton adapter", () => {
   assert.match(js, /install_ableton_adapter/);
   assert.match(js, /loadAbletonAdapterStatus/);
 });
+
+
+test("desktop and remote JS only reference controls that exist in their HTML", () => {
+  for (const surface of ["app", "remote"]) {
+    const js = fs.readFileSync(path.join(__dirname, "..", surface, "app.js"), "utf8");
+    const html = fs.readFileSync(path.join(__dirname, "..", surface, "index.html"), "utf8");
+    const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]));
+    const references = [...js.matchAll(/\$\("([^"]+)"\)/g)].map((match) => match[1]);
+    const missing = [...new Set(references.filter((id) => !ids.has(id)))];
+    assert.deepEqual(missing, [], surface + " has missing DOM controls: " + missing.join(", "));
+  }
+});
