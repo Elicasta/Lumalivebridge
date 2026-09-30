@@ -157,3 +157,21 @@ test("Track Editor exposes waveform Tap 1 and Ableton reference controls", () =>
   assert.match(js, /apply_reference_warp/);
   assert.match(js, /data-section-name/);
 });
+
+
+test("service build preflights tracks before clearing and scrubs partial writes on failure", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "src-tauri", "src", "main.rs"), "utf8");
+  const buildStart = main.indexOf("async fn build_service");
+  const buildEnd = main.indexOf("\nfn main()", buildStart);
+  const build = main.slice(buildStart, buildEnd);
+
+  const preflight = build.indexOf('bridge::send("ensure_track"');
+  const clear = build.indexOf('bridge::send("clear_luma_arrangement"');
+  assert.ok(preflight >= 0, "service build must preflight destination tracks");
+  assert.ok(clear > preflight, "current Luma Arrangement must not be cleared before track preflight");
+
+  const clearCalls = build.match(/bridge::send\("clear_luma_arrangement"/g) || [];
+  assert.ok(clearCalls.length >= 2, "failed writes must attempt to remove partial Luma clips");
+  assert.match(build, /"sync_cue_points"[\s\S]*Vec::<Value>::new\(\)/);
+  assert.match(build, /"configure_service_timeline"[\s\S]*Vec::<Value>::new\(\)/);
+});
