@@ -287,3 +287,31 @@ test("1.0 version is consistent across app manifests and DMG workflow", () => {
   assert.match(build, /Luma-Live-1\.0\.0-aarch64\.dmg/);
   assert.match(build, /Luma-Live-macOS-v1\.0\.0/);
 });
+
+
+test("1.0 app bundle carries and manages the matching Ableton adapter", () => {
+  const tauri = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "src-tauri", "tauri.conf.json"), "utf8"));
+  const main = fs.readFileSync(path.join(__dirname, "..", "src-tauri", "src", "main.rs"), "utf8");
+  const html = fs.readFileSync(path.join(__dirname, "..", "app", "index.html"), "utf8");
+  const js = fs.readFileSync(path.join(__dirname, "..", "app", "app.js"), "utf8");
+
+  const resources = tauri.bundle && tauri.bundle.resources || {};
+  for (const file of [
+    "LumaLiveBridge.maxpat", "live-api.js", "node-bridge.js",
+    "protocol.js", "validator.js"
+  ]) {
+    assert.ok(
+      Object.keys(resources).some((source) => source.endsWith("/device/" + file)),
+      file + " is not bundled with the desktop app"
+    );
+  }
+
+  assert.match(main, /install_ableton_adapter/);
+  assert.match(main, /get_ableton_adapter_status/);
+  assert.match(main, /preserved_amxd/);
+  assert.match(main, /migratedDevice/);
+  assert.match(html, /id="installAbletonAdapter"/);
+  assert.match(html, /id="abletonAdapterBadge"/);
+  assert.match(js, /install_ableton_adapter/);
+  assert.match(js, /loadAbletonAdapterStatus/);
+});
