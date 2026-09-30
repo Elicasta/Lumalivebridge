@@ -231,6 +231,78 @@
               </div>
             </div>
 
+            <div class="track-editor-card">
+              <div class="panel-heading compact-heading">
+                <div>
+                  <span class="eyebrow">TRACK EDITOR</span>
+                  <h3>Waveform · Grid · Sections</h3>
+                </div>
+                <span id="referenceBadge" class="package-badge">NO TRACK</span>
+              </div>
+
+              <div class="reference-source-row">
+                <div>
+                  <span class="eyebrow">REFERENCE AUDIO</span>
+                  <code id="referenceSourcePath">Select an Ableton audio clip or import a track.</code>
+                </div>
+                <div class="package-actions">
+                  <button id="useAbletonReference" class="quiet" disabled>Use Selected Ableton Clip</button>
+                  <button id="importReferenceTrack" class="quiet" disabled>Import Audio</button>
+                  <button id="analyzeReferenceTrack" class="quiet" disabled>Analyze</button>
+                </div>
+              </div>
+
+              <div id="referenceWaveformWrap" class="reference-waveform-wrap">
+                <canvas id="referenceWaveform" width="1400" height="260"></canvas>
+                <div id="referenceWaveformEmpty" class="reference-waveform-empty">Attach a reference track, then Analyze.</div>
+              </div>
+
+              <div class="reference-metrics">
+                <label>BPM
+                  <input id="referenceBpm" type="number" min="20" max="999" step="0.1" value="120">
+                </label>
+                <label>Meter
+                  <div class="meter-fields">
+                    <input id="referenceMeterNum" type="number" min="1" max="32" value="4">
+                    <span>/</span>
+                    <input id="referenceMeterDen" type="number" min="1" max="32" value="4">
+                  </div>
+                </label>
+                <label>First downbeat (sec)
+                  <input id="referenceDownbeat" type="number" min="0" step="0.001" value="0">
+                </label>
+                <div class="reference-readout">
+                  <span class="eyebrow">CURSOR</span>
+                  <strong id="referenceCursor">—</strong>
+                </div>
+              </div>
+
+              <div class="reference-actions">
+                <button id="useDetectedAlignment" class="quiet" disabled>Use Detected</button>
+                <button id="tapDownbeat" class="quiet" disabled>Tap 1</button>
+                <button id="clearDownbeatTaps" class="quiet" disabled>Clear Taps</button>
+                <button id="saveReferenceAlignment" class="quiet" disabled>Save Grid</button>
+                <button id="applyReferenceWarp" class="primary" disabled>Warp Selected Ableton Clip</button>
+              </div>
+              <p id="referenceStatusText" class="hint">For a messy rehearsal track: play the selected clip in Ableton and tap <strong>Tap 1</strong> on successive measure downbeats. Luma turns those taps into warp anchors.</p>
+
+              <div class="section-marker-tools">
+                <div>
+                  <span class="eyebrow">ADD SECTION AT CURSOR</span>
+                  <strong id="referenceCursorBar">Click the waveform to choose a bar.</strong>
+                </div>
+                <div class="section-marker-buttons">
+                  <button data-section-name="Intro" class="quiet">Intro</button>
+                  <button data-section-name="Verse" class="quiet">Verse</button>
+                  <button data-section-name="Pre-Chorus" class="quiet">Pre</button>
+                  <button data-section-name="Chorus" class="quiet">Chorus</button>
+                  <button data-section-name="Bridge" class="quiet">Bridge</button>
+                  <button data-section-name="Vamp" class="quiet">Vamp</button>
+                  <button data-section-name="Outro" class="quiet">Outro</button>
+                </div>
+              </div>
+            </div>
+
             <div class="actions">
               <button id="deleteSong" class="danger-link" hidden>Delete</button>
               <div class="action-cluster">
