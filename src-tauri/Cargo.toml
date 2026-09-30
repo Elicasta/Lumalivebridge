@@ -12,6 +12,7 @@ tauri-build = { version = "2", features = [] }
 anyhow = "1"
 axum = "0.7"
 if-addrs = "0.13"
+hound = "3.5"
 rusqlite = { version = "0.32", features = ["bundled"] }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
