@@ -294,6 +294,136 @@ function trackState() {
   return tracks;
 }
 
+function normalizeWarpMarkers(value) {
+  var parsed = value;
+  if (parsed instanceof Array && parsed.length === 1) parsed = parsed[0];
+  if (typeof parsed === "string") {
+    try { parsed = JSON.parse(parsed); } catch (_) { return []; }
+  }
+  if (!parsed) return [];
+
+  var list = parsed.warp_markers || parsed.warpMarkers || parsed;
+  if (!(list instanceof Array)) return [];
+
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    var marker = list[i];
+    if (typeof marker === "string") {
+      try { marker = JSON.parse(marker); } catch (_) { continue; }
+    }
+    if (!marker) continue;
+    var sampleTime = Number(marker.sample_time != null ? marker.sample_time : marker.sampleTime);
+    var beatTime = Number(marker.beat_time != null ? marker.beat_time : marker.beatTime);
+    if (!isFinite(sampleTime) || !isFinite(beatTime)) continue;
+    out.push({ sampleTime: sampleTime, beatTime: beatTime });
+  }
+  out.sort(function(a, b) { return a.beatTime - b.beatTime; });
+  return out;
+}
+
+function samplePositionFromWarp(beatPosition, markers) {
+  if (!markers || markers.length < 2 || !isFinite(Number(beatPosition))) return null;
+  var beat = Number(beatPosition);
+  var left = markers[0];
+  var right = markers[markers.length - 1];
+
+  for (var i = 0; i < markers.length - 1; i++) {
+    if (beat >= markers[i].beatTime && beat <= markers[i + 1].beatTime) {
+      left = markers[i];
+      right = markers[i + 1];
+      break;
+    }
+  }
+
+  var beatSpan = right.beatTime - left.beatTime;
+  if (!(beatSpan > 0)) return null;
+  var ratio = (beat - left.beatTime) / beatSpan;
+  return left.sampleTime + ratio * (right.sampleTime - left.sampleTime);
+}
+
+function detailClipInfo() {
+  var clip;
+  try {
+    clip = live("live_set view detail_clip");
+  } catch (_) {
+    return null;
+  }
+
+  if (!clip || !(Number(clip.id) > 0)) return null;
+
+  var isAudio = Number(safeProp(clip, "is_audio_clip", 0)) === 1;
+  var isMidi = Number(safeProp(clip, "is_midi_clip", 0)) === 1;
+  var warping = isAudio && Number(safeProp(clip, "warping", 0)) === 1;
+  var playingPosition = Number(safeProp(clip, "playing_position", 0));
+  var sampleRate = isAudio ? Number(safeProp(clip, "sample_rate", 0)) : 0;
+  var sampleLength = isAudio ? Number(safeProp(clip, "sample_length", 0)) : 0;
+  var markers = isAudio ? normalizeWarpMarkers(safeProp(clip, "warp_markers", null)) : [];
+  var samplePositionSeconds = null;
+
+  if (isAudio && isFinite(playingPosition)) {
+    if (warping) samplePositionSeconds = samplePositionFromWarp(playingPosition, markers);
+    else samplePositionSeconds = Math.max(0, playingPosition);
+  }
+
+  return {
+    id: Number(clip.id) || 0,
+    name: String(safeProp(clip, "name", "") || ""),
+    filePath: isAudio ? String(safeProp(clip, "file_path", "") || "") : "",
+    isAudioClip: isAudio,
+    isMidiClip: isMidi,
+    isArrangementClip: Number(safeProp(clip, "is_arrangement_clip", 0)) === 1,
+    isSessionClip: Number(safeProp(clip, "is_session_clip", 0)) === 1,
+    isPlaying: Number(safeProp(clip, "is_playing", 0)) === 1,
+    playingPosition: isFinite(playingPosition) ? playingPosition : 0,
+    samplePositionSeconds: samplePositionSeconds,
+    sampleRate: isFinite(sampleRate) ? sampleRate : 0,
+    sampleLength: isFinite(sampleLength) ? sampleLength : 0,
+    sampleLengthSeconds: sampleRate > 0 && sampleLength >= 0 ? sampleLength / sampleRate : null,
+    startTime: Number(safeProp(clip, "start_time", 0)) || 0,
+    endTime: Number(safeProp(clip, "end_time", 0)) || 0,
+    warping: !!warping,
+    warpMode: isAudio ? Number(safeProp(clip, "warp_mode", 0)) || 0 : null,
+    warpMarkers: markers
+  };
+}
+
+function applyDetailClipWarp(args) {
+  var clip = live("live_set view detail_clip");
+  if (!clip || !(Number(clip.id) > 0)) throw new Error("Select an audio clip in Ableton first");
+  if (Number(safeProp(clip, "is_audio_clip", 0)) !== 1) {
+    throw new Error("The selected Ableton clip is not an audio clip");
+  }
+
+  clip.set("signature_numerator", Number(args.numerator));
+  clip.set("signature_denominator", Number(args.denominator));
+  clip.set("warping", 1);
+  clip.set("warp_mode", Number(args.warpMode));
+
+  var existing = normalizeWarpMarkers(safeProp(clip, "warp_markers", null));
+  for (var index = existing.length - 1; index >= 0; index--) {
+    try {
+      clip.call("remove_warp_marker", Number(existing[index].beatTime));
+    } catch (_) {}
+  }
+
+  var applied = 0;
+  for (var markerIndex = 0; markerIndex < args.markers.length; markerIndex++) {
+    var marker = args.markers[markerIndex];
+    var markerJson = JSON.stringify({
+      sample_time: Number(marker.sampleTime),
+      beat_time: Number(marker.beatTime)
+    });
+    clip.call("add_warp_marker", [markerJson]);
+    applied += 1;
+  }
+
+  return {
+    applied: applied,
+    bpm: Number(args.bpm),
+    detailClip: detailClipInfo()
+  };
+}
+
 function highlightedSlotInfo() {
   var highlighted;
   try {
@@ -640,6 +770,16 @@ function execute(command) {
 
   if (type === "get_arrangement_overview") {
     return { overview: arrangementOverview() };
+  }
+
+  if (type === "get_detail_clip_info") {
+    var detailInfo = detailClipInfo();
+    if (!detailInfo) throw new Error("Select a clip in Ableton first");
+    return { detailClip: detailInfo, selectedClip: detailInfo };
+  }
+
+  if (type === "apply_detail_clip_warp") {
+    return applyDetailClipWarp(args);
   }
 
   if (type === "create_track") {
