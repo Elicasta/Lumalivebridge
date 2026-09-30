@@ -3,6 +3,8 @@
 const COMMAND_TYPES = Object.freeze([
   "get_state",
   "get_arrangement_overview",
+  "get_detail_clip_info",
+  "apply_detail_clip_warp",
   "create_track",
   "rename_track",
   "create_scene",
