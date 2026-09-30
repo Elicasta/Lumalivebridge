@@ -10,6 +10,10 @@
     runtime: null,
     live: null,
     arrangement: null,
+    arrangementOverview: null,
+    arrangementSignature: "",
+    timelineFollow: true,
+    liveLibraryQuery: "",
     activeSetlistId: null,
     editingSongId: null,
     editingSetlistId: null,
@@ -96,6 +100,7 @@
 
 
   function go(page) {
+    document.body.dataset.page = page;
     document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === page));
     document.querySelectorAll(".page").forEach((panel) => panel.classList.toggle("active", panel.dataset.pagePanel === page));
     $("pageEyebrow").textContent = titles[page][0];
@@ -1347,6 +1352,8 @@
     renderDraft();
     recomputeArrangement();
     renderSongPackageStatus();
+    renderLibraryRail();
+    renderArrangementTimeline();
   }
 
   async function loadPackageStatuses() {
@@ -1372,6 +1379,21 @@
     } catch (_) {
       state.live = { bridgeConnected: false };
       renderLive();
+    }
+  }
+
+  async function loadArrangementOverview() {
+    if (!(state.live && state.live.bridgeConnected)) {
+      state.arrangementOverview = null;
+      renderArrangementTimeline();
+      return;
+    }
+    try {
+      state.arrangementOverview = await invoke("get_arrangement_overview");
+      renderArrangementTimeline();
+    } catch (_) {
+      // Keep the last good overview. Live control should not flicker because
+      // an expensive Arrangement read missed one polling window.
     }
   }
 
