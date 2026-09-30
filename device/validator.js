@@ -68,6 +68,7 @@ function validateCommand(input, options = {}) {
 
   switch (input.type) {
     case "get_state":
+    case "get_arrangement_overview":
       normalized = {};
       break;
 
