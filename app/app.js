@@ -23,6 +23,7 @@
     sectionSignature: "",
     sceneSignature: "",
     buskSignature: "",
+    buskMixerSignature: "",
     packageStatuses: {},
     referenceStatus: null,
     referenceTaps: [],
@@ -615,6 +616,7 @@
           Math.max(0, Number(transition.bars || 0)) + '"></label>';
         detail.querySelector(".transition-bars").addEventListener("input", (event) => {
           transition.bars = Math.max(0, Number(event.target.value || 0));
+          renderBuildTimeline();
         });
       } else if (selected === "vamp") {
         const sections = song ? song.sections || [] : [];
@@ -630,7 +632,10 @@
         const picker = detail.querySelector(".transition-vamp");
         if (picker) {
           picker.value = transition.vampSectionId || "";
-          picker.addEventListener("change", () => transition.vampSectionId = picker.value || null);
+          picker.addEventListener("change", () => {
+            transition.vampSectionId = picker.value || null;
+            renderBuildTimeline();
+          });
         }
       } else if (selected === "hold") {
         detail.innerHTML = '<span class="transition-note">Stop at the song boundary. Continue when you are ready.</span>';
@@ -648,8 +653,105 @@
       }
     }
 
-    mode.addEventListener("change", renderDetail);
+    mode.addEventListener("change", () => {
+      renderDetail();
+      renderBuildTimeline();
+    });
     renderDetail();
+  }
+
+  function buildTransitionLabel(item, index) {
+    if (index >= state.draftItems.length - 1) return "END";
+    const transition = normalizeTransition(item.transition);
+    if (transition.mode === "inherit") {
+      return Number($("setlistGap").value || 0) + " BAR GAP";
+    }
+    if (transition.mode === "gap") return Number(transition.bars || 0) + " BAR GAP";
+    if (transition.mode === "segue") return "SEGUE";
+    if (transition.mode === "hold") return "HOLD";
+    if (transition.mode === "vamp") {
+      const song = state.songs.find((entry) => entry.id === item.songId);
+      const section = song && (song.sections || []).find((entry) => entry.id === transition.vampSectionId);
+      return "VAMP" + (section ? " · " + section.name.toUpperCase() : "");
+    }
+    if (transition.mode === "mashup") return Number(transition.bars || 0) + " BAR OVERLAP";
+    return transition.mode.toUpperCase();
+  }
+
+  function renderBuildTimeline() {
+    const host = $("buildTimeline");
+    if (!host) return;
+
+    host.innerHTML = "";
+    let totalBars = 0;
+    state.draftItems.forEach((item, index) => {
+      const song = state.songs.find((entry) => entry.id === item.songId);
+      if (song) totalBars += Math.max(1, Number(song.lengthBars || 0));
+
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "build-song-card";
+      card.draggable = true;
+      card.dataset.index = index;
+      card.innerHTML =
+        '<span class="build-song-index">' + String(index + 1).padStart(2, "0") + '</span>' +
+        '<strong>' + escapeHtml(song ? song.title : item.songId) + '</strong>' +
+        '<small>' + escapeHtml(song
+          ? [song.bpm + " BPM", transposeKey(song.key || "", Number(item.transposeSemitones || 0)) || song.key, song.lengthBars + " bars"].filter(Boolean).join(" · ")
+          : "Missing song") + '</small>';
+
+      card.addEventListener("click", () => {
+        const detail = $("setlistItems").querySelector('[data-draft-index="' + index + '"]');
+        if (detail) detail.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+
+      card.addEventListener("dragstart", (event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", String(index));
+        card.classList.add("dragging");
+      });
+      card.addEventListener("dragend", () => card.classList.remove("dragging"));
+      card.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        card.classList.add("drag-over");
+      });
+      card.addEventListener("dragleave", () => card.classList.remove("drag-over"));
+      card.addEventListener("drop", (event) => {
+        event.preventDefault();
+        card.classList.remove("drag-over");
+        const from = Number(event.dataTransfer.getData("text/plain"));
+        const to = Number(card.dataset.index);
+        if (!Number.isInteger(from) || !Number.isInteger(to) || from === to) return;
+        const moved = state.draftItems.splice(from, 1)[0];
+        state.draftItems.splice(to, 0, moved);
+        renderDraft();
+      });
+
+      host.appendChild(card);
+
+      if (index < state.draftItems.length - 1) {
+        const transition = normalizeTransition(item.transition);
+        const connector = document.createElement("div");
+        connector.className = "build-transition-node mode-" + transition.mode;
+        connector.innerHTML =
+          '<span>→</span><strong>' + escapeHtml(buildTransitionLabel(item, index)) + '</strong><span>→</span>';
+        host.appendChild(connector);
+
+        if (transition.mode === "inherit") totalBars += Number($("setlistGap").value || 0);
+        if (transition.mode === "gap" || transition.mode === "hold") {
+          totalBars += transition.mode === "hold"
+            ? 1
+            : Math.max(0, Number(transition.bars || 0));
+        }
+        if (transition.mode === "mashup") totalBars -= Math.max(0, Number(transition.bars || 0));
+      }
+    });
+
+    $("buildTimelineDuration").textContent = Math.max(0, totalBars) + " bars";
+    if (!state.draftItems.length) {
+      host.innerHTML = '<div class="empty">Add a song to start the service timeline.</div>';
+    }
   }
 
   function renderDraft() {
@@ -663,6 +765,7 @@
 
       const row = document.createElement("div");
       row.className = "setlist-item transition-setlist-item";
+      row.dataset.draftIndex = index;
       row.innerHTML =
         '<span class="number">' + String(index + 1).padStart(2, "0") + '</span>' +
         '<span class="item-copy"><b>' + escapeHtml(song ? song.title : item.songId) + '</b><small>' +
@@ -691,7 +794,10 @@
           ? (shift ? original + " → " + (result || original) : original + " · original")
           : (shift ? (shift > 0 ? "+" : "") + shift + " st" : "No key metadata");
       };
-      transpose.addEventListener("change", refreshEffectiveKey);
+      transpose.addEventListener("change", () => {
+        refreshEffectiveKey();
+        renderBuildTimeline();
+      });
       refreshEffectiveKey();
 
       const up = row.querySelector("[data-up]");
@@ -718,6 +824,7 @@
     if (!state.draftItems.length) {
       host.innerHTML = '<div class="empty boxed">Add songs in service order.</div>';
     }
+    renderBuildTimeline();
   }
 
   function setlistPayload() {
@@ -1994,7 +2101,10 @@
     }
   });
 
-  $("setlistGap").addEventListener("input", () => renderDraft());
+  $("setlistGap").addEventListener("input", () => {
+    renderDraft();
+    renderBuildTimeline();
+  });
 
   $("runSystemCheck").addEventListener("click", async () => {
     const button = $("runSystemCheck");
