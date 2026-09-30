@@ -112,3 +112,45 @@ button:disabled{opacity:.35;cursor:default}
 .pairing-card>small{display:block;margin-top:15px;color:#646a72;font-size:9px;line-height:1.5}
 @media(max-width:900px){.perform-grid{grid-template-columns:1fr}.hero-actions{grid-template-columns:repeat(2,1fr)}.mixer-row{grid-template-columns:25px minmax(90px,1fr) 44px 36px 36px;grid-template-areas:"num name value mute solo" ". slider slider slider slider"}.track-num{grid-area:num}.track-name{grid-area:name}.track-volume{grid-area:slider}.volume-value{grid-area:value}.mute{grid-area:mute}.solo{grid-area:solo}}
 @media(max-width:620px){.shell{padding-left:9px;padding-right:9px}.topbar{align-items:flex-start}.status-wrap{display:grid;justify-items:end}.hero-scene h2{font-size:42px}.perform-scenes{grid-template-columns:1fr}.now-next{grid-template-columns:1fr}.section-arrows,.song-arrows{grid-template-columns:1fr}.command-row{grid-template-columns:1fr 1fr}.command-row input{grid-column:1/-1}.command-preview{grid-template-columns:1fr}.hero-actions{grid-template-columns:1fr 1fr}}
+
+
+/* Luma Live 1.0 remote visual system */
+:root{background:#07101b;color:#f1f7fb}
+body{background:
+  radial-gradient(circle at 50% -10%,rgba(36,100,164,.18),transparent 28%),
+  #07101b}
+.shell{max-width:1180px;margin:0 auto}
+.brand-mark{background:#0f2035;border-color:#294763;color:#bde9ff}
+.status,.pill{border-color:#28405a;background:#0c1928}
+.tabs{background:#081422;border-color:#20344c}
+.tab{color:#7d93aa}
+.tab.active{background:#16385a;color:#dff5ff;box-shadow:inset 0 -2px 0 #56d0ff}
+.card{border-color:#24374d;background:#0b1726}
+.primary{background:#dff5ff;color:#06111b;border-color:#f4fbff}
+.hero-scene{background:linear-gradient(180deg,#10243b,#0b1726)}
+.hero-scene h2{color:#f4fbff}
+.perform-scene{background:#102039;border-color:#29435f}
+.perform-scene.active{background:#1c5483;border-color:#6ad7ff;color:#fff}
+.arrangement-card{border-color:#2b4663;background:#091727}
+.now-next article{background:#0b1c30;border-color:#294661}
+.now-next article:first-child{box-shadow:inset 3px 0 0 #52ceff}
+.section-btn{background:#10223a;border-color:#2a4764}
+.section-btn.active{background:#72d7ff;color:#06111b;border-color:#b3ecff}
+.mixer-row{background:#0c1928;border-color:#203850}
+.track-volume{accent-color:#53cfff}
+.command-row input,.service-loader select{background:#06101a;border-color:#28425e}
+.command-preview{background:#0a1928;border-color:#2b4762}
+.busk-card{background:#07111d;border-color:#273d55}
+.busk-head{background:#0d1b2d;border-bottom-color:#28405a}
+.session-matrix{background:#06101b}
+.matrix-label{background:#0a1726;border-color:#1e334b}
+.track-header{background:#102039;border-color:#203a54}
+.scene-info{background:#091625;border-color:#20344a}
+.scene-info.active{background:#12334f;border-left-color:#55d2ff}
+.scene-launch{background:#10233a;border-color:#2a4967}
+.clip-cell{background:#0d1b2c;border-color:transparent}
+.clip-cell.playing{border-color:#e9faff;box-shadow:0 0 12px rgba(72,205,255,.2)}
+.track-stop{background:#0c1928;border-color:#20354d}
+.pairing-screen{background:rgba(5,10,17,.985)}
+.pairing-card{background:#0b1726;border-color:#2a415a}
+.pairing-code-input{background:#06101b;border-color:#31506d}
