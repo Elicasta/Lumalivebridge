@@ -495,7 +495,7 @@ async fn analyze_reference_track(
 ) -> Result<Value, String> {
     let song = song_by_id(state.inner(), &id)?;
     let root = service_builder::default_root();
-    let analysis = tauri::async_runtime::spawn_blocking(move || {
+    let analysis = tokio::task::spawn_blocking(move || {
         reference_audio::analyze(&root, &song)
     })
     .await
@@ -592,8 +592,10 @@ async fn run_system_check(state: State<'_, AppState>) -> Result<Value, String> {
     let template = root.join("Templates").join("Church Standard.als");
 
     let mut packages = Vec::new();
+    let mut references = Vec::new();
     for song in state.db.list_songs()? {
         packages.push(service_builder::package_status(&root, &song)?);
+        references.push(reference_audio::status(&root, &song)?);
     }
 
     let bridge_health = bridge::health_info().await;
@@ -621,7 +623,8 @@ async fn run_system_check(state: State<'_, AppState>) -> Result<Value, String> {
         "adapterVersion": adapter_version,
         "adapterCapabilities": capabilities,
         "songCount": packages.len(),
-        "packages": packages
+        "packages": packages,
+        "references": references
     }))
 }
 
