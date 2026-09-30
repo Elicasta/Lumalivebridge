@@ -188,6 +188,16 @@ async fn direct_live_command(state: State<'_, AppState>, command: Value) -> Resu
 }
 
 #[tauri::command]
+async fn get_arrangement_overview() -> Result<Value, String> {
+    let response = bridge::send("get_arrangement_overview", json!({})).await?;
+    Ok(response
+        .get("result")
+        .and_then(|value| value.get("overview"))
+        .cloned()
+        .unwrap_or_else(|| json!({ "tracks": [], "cuePoints": [] })))
+}
+
+#[tauri::command]
 async fn sync_live_setlist(state: State<'_, AppState>, id: String) -> Result<Value, String> {
     let state = state.inner().clone();
     let setlist = state
@@ -1006,6 +1016,7 @@ fn main() {
             rotate_pairing_code,
             get_live_state,
             direct_live_command,
+            get_arrangement_overview,
             sync_live_setlist,
             jump_live,
             preview_plain_command,
