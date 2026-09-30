@@ -80,7 +80,7 @@ jobs:
           set -euo pipefail
           APP="src-tauri/target/release/bundle/macos/Luma Live.app"
           DMG_DIR="src-tauri/target/release/bundle/dmg"
-          DMG="$DMG_DIR/Luma-Live-0.5.2-aarch64.dmg"
+          DMG="$DMG_DIR/Luma-Live-0.6.0-aarch64.dmg"
           STAGE="$(mktemp -d)"
 
           mkdir -p "$DMG_DIR"
@@ -95,7 +95,7 @@ jobs:
       - name: Upload macOS bundles
         uses: actions/upload-artifact@v4
         with:
-          name: Luma-Live-macOS-v0.5.2
+          name: Luma-Live-macOS-v0.6.0
           path: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/macos/*.app
