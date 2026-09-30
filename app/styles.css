@@ -614,3 +614,109 @@ button:disabled { opacity: .35; cursor: default; }
 .busk-mini-toggle.active.mute { background: #d99f4c; color: #15100a; border-color: #efb55e; }
 .busk-mini-toggle.active.solo { background: #e7d759; color: #16140a; border-color: #fff185; }
 #desktopBuskClick.active { background: #f2f2f2; color: #0b0c0e; border-color: #fff; }
+
+
+/* Reference / rehearsal Track Editor */
+.track-editor-card {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #30353c;
+  border-radius: 15px;
+  background: #111418;
+}
+.reference-source-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 10px;
+}
+.reference-source-row code {
+  display: block;
+  margin-top: 5px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9ba3ad;
+}
+.reference-waveform-wrap {
+  position: relative;
+  margin-top: 12px;
+  min-height: 210px;
+  border: 1px solid #2b3036;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0d1014;
+}
+#referenceWaveform {
+  display: block;
+  width: 100%;
+  height: 210px;
+  cursor: crosshair;
+}
+.reference-waveform-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #747c86;
+  font-size: 11px;
+  pointer-events: none;
+}
+.reference-waveform-empty[hidden] { display: none; }
+.reference-metrics {
+  display: grid;
+  grid-template-columns: 120px 150px 170px minmax(130px,1fr);
+  gap: 8px;
+  align-items: end;
+  margin-top: 10px;
+}
+.reference-metrics label {
+  margin: 0;
+}
+.reference-readout {
+  min-height: 54px;
+  padding: 9px 11px;
+  border: 1px solid #2e333a;
+  border-radius: 10px;
+  background: #0d1013;
+}
+.reference-readout strong {
+  display: block;
+  margin-top: 6px;
+}
+.reference-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.section-marker-tools {
+  display: grid;
+  grid-template-columns: minmax(170px,.55fr) 1fr;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #2d3238;
+}
+.section-marker-tools strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+}
+.section-marker-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.section-marker-buttons button {
+  min-height: 34px;
+  padding: 7px 10px;
+}
+@media (max-width: 880px) {
+  .reference-source-row,
+  .section-marker-tools { grid-template-columns: 1fr; }
+  .reference-metrics { grid-template-columns: 1fr 1fr; }
+}
