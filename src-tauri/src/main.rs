@@ -19,8 +19,206 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
+
+const ABLETON_ADAPTER_VERSION: &str = "1.0.0";
+const ABLETON_ADAPTER_FILES: &[&str] = &[
+    "LumaLiveBridge.maxpat",
+    "live-api.js",
+    "node-bridge.js",
+    "protocol.js",
+    "validator.js",
+    "README.md",
+];
+
+fn ableton_max_effects_dir() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|_| "Could not resolve the macOS home folder".to_string())?;
+    Ok(PathBuf::from(home)
+        .join("Music")
+        .join("Ableton")
+        .join("User Library")
+        .join("Presets")
+        .join("MIDI Effects")
+        .join("Max MIDI Effect"))
+}
+
+fn ableton_adapter_dir() -> Result<PathBuf, String> {
+    Ok(ableton_max_effects_dir()?.join("Luma Live Bridge"))
+}
+
+fn is_amxd(path: &Path) -> bool {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case("amxd"))
+        .unwrap_or(false)
+}
+
+fn has_amxd_in_dir(dir: &Path) -> bool {
+    fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.filter_map(Result::ok))
+        .any(|entry| entry.path().is_file() && is_amxd(&entry.path()))
+}
+
+fn collect_luma_amxd(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+    if depth > 5 || !dir.is_dir() {
+        return;
+    }
+
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_luma_amxd(&path, depth + 1, out);
+            continue;
+        }
+        if !is_amxd(&path) {
+            continue;
+        }
+        let name = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if name.contains("luma") && name.contains("live") {
+            out.push(path);
+        }
+    }
+}
+
+fn newest_luma_amxd(root: &Path, exclude_dir: &Path) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    collect_luma_amxd(root, 0, &mut candidates);
+    candidates.retain(|path| !path.starts_with(exclude_dir));
+    candidates.sort_by_key(|path| {
+        fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+    });
+    candidates.pop()
+}
+
+fn ableton_adapter_status_value() -> Value {
+    let target = ableton_adapter_dir().unwrap_or_else(|_| PathBuf::from("Luma Live Bridge"));
+    let node_bridge = target.join("node-bridge.js");
+    let source_current = fs::read_to_string(&node_bridge)
+        .map(|content| {
+            content.contains(&format!("version: \"{}\"", ABLETON_ADAPTER_VERSION))
+                || content.contains(&format!("version:\"{}\"", ABLETON_ADAPTER_VERSION))
+        })
+        .unwrap_or(false);
+    let amxd_found = has_amxd_in_dir(&target);
+
+    json!({
+        "version": ABLETON_ADAPTER_VERSION,
+        "path": target.to_string_lossy().to_string(),
+        "sourceCurrent": source_current,
+        "amxdFound": amxd_found,
+        "ready": source_current && amxd_found
+    })
+}
+
+#[tauri::command]
+fn get_ableton_adapter_status() -> Result<Value, String> {
+    Ok(ableton_adapter_status_value())
+}
+
+#[tauri::command]
+fn install_ableton_adapter(app: AppHandle) -> Result<Value, String> {
+    let resources = app.path().resource_dir().map_err(|e| e.to_string())?;
+    let source = resources.join("ableton-adapter");
+    if !source.join("node-bridge.js").is_file() {
+        return Err(format!(
+            "The Luma Live 1.0 Ableton adapter is missing from this app bundle: {}",
+            source.to_string_lossy()
+        ));
+    }
+
+    let parent = ableton_max_effects_dir()?;
+    fs::create_dir_all(&parent).map_err(|e| e.to_string())?;
+    let target = parent.join("Luma Live Bridge");
+
+    // Preserve any already-saved Max for Live device before replacing an old
+    // development symlink with the app-managed adapter folder.
+    let preserve_root = std::env::temp_dir()
+        .join(format!("luma-live-adapter-preserve-{}", Uuid::new_v4()));
+    let mut preserved_amxd = Vec::new();
+
+    if fs::symlink_metadata(&target)
+        .map(|metadata| metadata.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        fs::create_dir_all(&preserve_root).map_err(|e| e.to_string())?;
+        if let Ok(entries) = fs::read_dir(&target) {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                if path.is_file() && is_amxd(&path) {
+                    let name = entry.file_name();
+                    let preserved = preserve_root.join(&name);
+                    fs::copy(&path, &preserved).map_err(|e| e.to_string())?;
+                    preserved_amxd.push((name, preserved));
+                }
+            }
+        }
+        fs::remove_file(&target).map_err(|e| e.to_string())?;
+    } else if target.exists() && !target.is_dir() {
+        return Err(format!(
+            "{} exists but is not an Ableton adapter folder",
+            target.to_string_lossy()
+        ));
+    }
+
+    let fallback_amxd = newest_luma_amxd(&parent, &target);
+    fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+
+    for file in ABLETON_ADAPTER_FILES {
+        let from = source.join(file);
+        if !from.is_file() {
+            return Err(format!("Bundled adapter file is missing: {file}"));
+        }
+        fs::copy(&from, target.join(file)).map_err(|e| e.to_string())?;
+    }
+
+    for (name, preserved) in &preserved_amxd {
+        fs::copy(preserved, target.join(name)).map_err(|e| e.to_string())?;
+    }
+
+    let mut migrated_device = false;
+    if !has_amxd_in_dir(&target) {
+        if let Some(existing) = fallback_amxd {
+            fs::copy(&existing, target.join("Luma Live.amxd")).map_err(|e| e.to_string())?;
+            migrated_device = true;
+        }
+    }
+
+    let _ = fs::remove_dir_all(&preserve_root);
+    let status = ableton_adapter_status_value();
+    Ok(json!({
+        "ok": true,
+        "version": ABLETON_ADAPTER_VERSION,
+        "path": target.to_string_lossy().to_string(),
+        "amxdFound": status.get("amxdFound").and_then(Value::as_bool).unwrap_or(false),
+        "sourceCurrent": true,
+        "ready": status.get("amxdFound").and_then(Value::as_bool).unwrap_or(false),
+        "migratedDevice": migrated_device
+    }))
+}
+
+#[tauri::command]
+fn reveal_ableton_adapter() -> Result<(), String> {
+    let target = ableton_adapter_dir()?;
+    fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+    std::process::Command::new("open")
+        .arg(&target)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
 
 fn load_or_create_token(app_dir: &Path) -> String {
     let path = app_dir.join("remote-token");
@@ -644,7 +842,10 @@ async fn run_system_check(state: State<'_, AppState>) -> Result<Value, String> {
         .cloned()
         .unwrap_or_else(|| json!([]));
 
+    let adapter_install = ableton_adapter_status_value();
+
     Ok(json!({
+        "adapterInstall": adapter_install,
         "libraryRoot": root.to_string_lossy().to_string(),
         "libraryWritable": writable,
         "templateExists": template.exists(),
@@ -1056,6 +1257,9 @@ fn main() {
             save_reference_alignment,
             capture_detail_clip_position,
             apply_reference_warp,
+            get_ableton_adapter_status,
+            install_ableton_adapter,
+            reveal_ableton_adapter,
             run_system_check,
             build_service
         ])
