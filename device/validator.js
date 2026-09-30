@@ -137,8 +137,47 @@ function validateCommand(input, options = {}) {
 
     case "stop_all_clips":
     case "refresh_session":
+    case "get_session_overview":
+    case "prev_scene":
+    case "next_scene":
+    case "tap_tempo":
+    case "capture_midi":
+    case "undo":
+    case "redo":
+    case "clear_selected_clip":
+    case "duplicate_selected_clip":
+    case "double_selected_clip":
       normalized = {};
       break;
+
+    case "fire_clip": {
+      const trackIndex = integer(args.trackIndex, "fire_clip.trackIndex");
+      const sceneIndex = integer(args.sceneIndex, "fire_clip.sceneIndex");
+      if (trackIndex < 0 || sceneIndex < 0) throw new Error("fire_clip indices must be >= 0");
+      normalized = { trackIndex, sceneIndex };
+      break;
+    }
+
+    case "stop_track": {
+      const trackIndex = integer(args.trackIndex, "stop_track.trackIndex");
+      if (trackIndex < 0) throw new Error("stop_track.trackIndex must be >= 0");
+      normalized = { trackIndex };
+      break;
+    }
+
+    case "session_record": {
+      const bars = args.bars == null ? 0 : finiteNumber(args.bars, "session_record.bars");
+      if (bars < 0 || bars > 512) throw new Error("session_record.bars must be 0..512");
+      normalized = { bars };
+      break;
+    }
+
+    case "set_swing": {
+      const value = finiteNumber(args.value, "set_swing.value");
+      if (value < 0 || value > 1) throw new Error("set_swing.value must be 0..1");
+      normalized = { value };
+      break;
+    }
 
     case "create_midi_clip": {
       const lengthBeats = finiteNumber(args.lengthBeats, "create_midi_clip.lengthBeats");
