@@ -577,7 +577,8 @@ pub fn build_service_folder(
             ));
         }
 
-        for stem in manifest.stems {
+        let uses_reference_only = manifest.stems.is_empty() && reference_status.source_exists;
+        for stem in &manifest.stems {
             let source = package.join(&stem.file);
             let destination = collected.join(&stem.file);
             if !source.exists() {
@@ -605,7 +606,7 @@ pub fn build_service_folder(
             });
         }
 
-        if manifest.stems.is_empty() && reference_status.source_exists {
+        if uses_reference_only {
             let source = reference_audio::source_path(root, song)?
                 .ok_or_else(|| format!("{} reference audio is missing", song.title))?;
             let collected_reference_dir = collected.join("Reference").join("Original");
