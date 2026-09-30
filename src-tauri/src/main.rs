@@ -6,6 +6,7 @@ mod lan;
 mod migration;
 mod models;
 mod pairing;
+mod reference_audio;
 mod service_builder;
 mod state;
 
@@ -427,6 +428,149 @@ fn attach_song_project(state: State<'_, AppState>, id: String) -> Result<Value, 
 }
 
 #[tauri::command]
+fn get_reference_status(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    let song = song_by_id(state.inner(), &id)?;
+    serde_json::to_value(reference_audio::status(
+        &service_builder::default_root(),
+        &song,
+    )?)
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_reference_track(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    let song = song_by_id(state.inner(), &id)?;
+    let files = choose_macos_files("Choose one rehearsal/reference audio file")?;
+    let Some(source) = files.first() else {
+        return Err("Reference track import cancelled".into());
+    };
+    serde_json::to_value(reference_audio::import_file(
+        &service_builder::default_root(),
+        &song,
+        source,
+    )?)
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn use_selected_ableton_reference(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Value, String> {
+    let song = song_by_id(state.inner(), &id)?;
+    let live = bridge::state().await?;
+    let detail = live
+        .get("detailClip")
+        .or_else(|| live.get("selectedClip"))
+        .ok_or_else(|| "Select an audio clip in Ableton first".to_string())?;
+    let is_audio = detail
+        .get("isAudioClip")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !is_audio {
+        return Err("The selected Ableton clip is not an audio clip".into());
+    }
+    let file_path = detail
+        .get("filePath")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            "This Max adapter is not reporting the selected clip file path yet. Install the current adapter and try again."
+                .to_string()
+        })?;
+
+    serde_json::to_value(reference_audio::attach_external(
+        &service_builder::default_root(),
+        &song,
+        std::path::Path::new(file_path),
+        "ableton",
+    )?)
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn analyze_reference_track(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Value, String> {
+    let song = song_by_id(state.inner(), &id)?;
+    let root = service_builder::default_root();
+    let analysis = tauri::async_runtime::spawn_blocking(move || {
+        reference_audio::analyze(&root, &song)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    serde_json::to_value(analysis).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_reference_alignment(
+    state: State<'_, AppState>,
+    id: String,
+    alignment: reference_audio::ReferenceAlignment,
+) -> Result<Value, String> {
+    let song = song_by_id(state.inner(), &id)?;
+    serde_json::to_value(reference_audio::save_alignment(
+        &service_builder::default_root(),
+        &song,
+        alignment,
+    )?)
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn capture_detail_clip_position() -> Result<Value, String> {
+    let response = bridge::send("get_detail_clip_info", json!({})).await?;
+    Ok(response)
+}
+
+#[tauri::command]
+async fn apply_reference_warp(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Value, String> {
+    let song = song_by_id(state.inner(), &id)?;
+    let status = reference_audio::status(&service_builder::default_root(), &song)?;
+    let alignment = status
+        .alignment
+        .ok_or_else(|| "Align the reference track first".to_string())?;
+    let analysis = status
+        .analysis
+        .ok_or_else(|| "Analyze the reference track first".to_string())?;
+
+    let mut markers = alignment.markers.clone();
+    if !markers.iter().any(|marker| marker.beat_time.abs() <= 0.0001) {
+        markers.push(reference_audio::WarpMarker {
+            sample_time: alignment.first_downbeat_seconds,
+            beat_time: 0.0,
+        });
+    }
+
+    if markers.len() < 2 && analysis.duration_seconds > alignment.first_downbeat_seconds {
+        markers.push(reference_audio::WarpMarker {
+            sample_time: analysis.duration_seconds,
+            beat_time: (analysis.duration_seconds - alignment.first_downbeat_seconds)
+                * alignment.bpm
+                / 60.0,
+        });
+    }
+
+    markers.sort_by(|a, b| a.sample_time.total_cmp(&b.sample_time));
+    let response = bridge::send(
+        "apply_detail_clip_warp",
+        json!({
+            "bpm": alignment.bpm,
+            "numerator": alignment.numerator,
+            "denominator": alignment.denominator,
+            "markers": markers,
+            "warpMode": 6
+        }),
+    )
+    .await?;
+    Ok(response)
+}
+
+#[tauri::command]
 fn import_song_stems(state: State<'_, AppState>, id: String) -> Result<Value, String> {
     let song = song_by_id(state.inner(), &id)?;
     let files = choose_macos_files("Choose the original stems for this song")?;
@@ -537,12 +681,13 @@ async fn build_service(
             .copied()
             .ok_or_else(|| format!("Song {} is missing from the library", item.song_id))?;
         let status = service_builder::package_status(&root, song)?;
+        let reference = reference_audio::status(&root, song)?;
         let mut missing = Vec::new();
-        if status.source_als.is_none() {
-            missing.push("Ableton Project/.als");
+        if status.source_als.is_none() && !reference.source_exists {
+            missing.push("Ableton Project/.als or reference track");
         }
-        if status.stem_count == 0 {
-            missing.push("original stems");
+        if status.stem_count == 0 && !reference.source_exists {
+            missing.push("original stems or reference track");
         }
         if !missing.is_empty() {
             package_blockers.push(format!("{}: {}", song.title, missing.join(" + ")));
@@ -822,6 +967,13 @@ fn main() {
             reveal_song_package,
             attach_song_project,
             import_song_stems,
+            get_reference_status,
+            import_reference_track,
+            use_selected_ableton_reference,
+            analyze_reference_track,
+            save_reference_alignment,
+            capture_detail_clip_position,
+            apply_reference_warp,
             run_system_check,
             build_service
         ])
