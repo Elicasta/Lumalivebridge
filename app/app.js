@@ -35,10 +35,10 @@
   let swingTimer = null;
 
   const titles = {
-    live: ["LIVE", "Song Control"],
+    live: ["LIVE", "Performance"],
     busk: ["SESSION VIEW", "Busk"],
-    songs: ["LIBRARY", "Songs"],
-    setlists: ["SERVICES", "Setlists"],
+    songs: ["LIBRARY", "Song Editor"],
+    setlists: ["SERVICES", "Build"],
     settings: ["SYSTEM", "Settings"]
   };
 
@@ -970,6 +970,14 @@
 
   function renderTransport() {
     const live = state.live || {};
+    const readyState = $("mdReadyState");
+    if (readyState) {
+      const label = live.bridgeConnected
+        ? (state.activeSetlistId ? "READY" : "CONNECTED")
+        : "OFFLINE";
+      readyState.textContent = label;
+      readyState.className = "md-ready-state " + (label === "READY" ? "ready" : label === "CONNECTED" ? "connected" : "offline");
+    }
     const ctx = live.liveContext;
     $("desktopPlay").classList.toggle("active", !!live.isPlaying);
     $("desktopPlayLabel").textContent = live.isPlaying ? "Playing" : "Play";
