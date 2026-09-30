@@ -247,7 +247,8 @@ test("Track Editor adapter supports selected clip inspection and warp writes", (
 
 test("adapter health advertises the complete 1.0 surface", () => {
   const bridge = fs.readFileSync(path.join(__dirname, "..", "device", "node-bridge.js"), "utf8");
-  assert.match(bridge, /version:\s*"1\.0\.0"/);
+  assert.match(bridge, /ADAPTER_VERSION\s*=\s*"1\.0\.0"/);
+  assert.match(bridge, /version:\s*ADAPTER_VERSION/);
   for (const capability of [
     "arrangement-audio", "arrangement-overview", "bulk-build", "extended-busk",
     "session-overview", "reference-editor", "detail-clip", "warp-editor"
