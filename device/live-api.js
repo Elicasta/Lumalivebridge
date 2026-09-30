@@ -203,6 +203,59 @@ function arrangementClipAt(trackIndex, position) {
   return null;
 }
 
+function safeProp(api, property, fallback) {
+  try {
+    var value = getProp(api, property);
+    return value == null ? fallback : value;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function arrangementOverview() {
+  var tracks = [];
+  var totalTracks = count("tracks");
+
+  for (var trackIndex = 0; trackIndex < totalTracks; trackIndex++) {
+    var track = live("live_set tracks " + trackIndex);
+    var clipCount = 0;
+    try {
+      clipCount = Number(track.getcount("arrangement_clips")) || 0;
+    } catch (_) {}
+
+    var clips = [];
+    for (var clipIndex = 0; clipIndex < clipCount; clipIndex++) {
+      try {
+        var clip = live("live_set tracks " + trackIndex + " arrangement_clips " + clipIndex);
+        var start = Number(safeProp(clip, "start_time", 0));
+        var end = Number(safeProp(clip, "end_time", start));
+        if (!isFinite(start) || !isFinite(end)) continue;
+        clips.push({
+          id: Number(clip.id) || 0,
+          name: String(safeProp(clip, "name", "") || ""),
+          color: Number(safeProp(clip, "color", 0)) || 0,
+          startTime: start,
+          endTime: Math.max(start, end),
+          isAudioClip: Number(safeProp(clip, "is_audio_clip", 0)) === 1,
+          isMidiClip: Number(safeProp(clip, "is_midi_clip", 0)) === 1
+        });
+      } catch (_) {}
+    }
+
+    tracks.push({
+      index: trackIndex,
+      name: String(safeProp(track, "name", "Track " + (trackIndex + 1)) || ("Track " + (trackIndex + 1))),
+      color: Number(safeProp(track, "color", 0)) || 0,
+      clips: clips
+    });
+  }
+
+  return {
+    tracks: tracks,
+    cuePoints: cuePointState()
+  };
+}
+
 function clearLumaArrangement() {
   var removed = 0;
   var trackCount = count("tracks");
@@ -442,6 +495,10 @@ function execute(command) {
     return { state: snapshot() };
   }
 
+  if (type === "get_arrangement_overview") {
+    return { overview: arrangementOverview() };
+  }
+
   if (type === "create_track") {
     var before = count("tracks");
     var index = args.index === undefined ? -1 : Number(args.index);
@@ -600,8 +657,14 @@ function execute(command) {
   if (type === "jump_to_time") {
     cancelQueuedJump();
     releaseServiceLoop();
-    set.set("current_song_time", Number(args.time));
-    return { time: Number(args.time) };
+    var jumpTarget = Number(args.time);
+    set.set("current_song_time", jumpTarget);
+    var observedTime = Number(getProp(set, "current_song_time"));
+    return {
+      time: jumpTarget,
+      observedTime: isFinite(observedTime) ? observedTime : jumpTarget,
+      isPlaying: Number(getProp(set, "is_playing")) === 1
+    };
   }
 
   if (type === "queue_jump_to_time") {
