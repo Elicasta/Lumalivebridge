@@ -1553,6 +1553,206 @@
     } catch (error) { showError(error); }
   });
 
+  $("useAbletonReference").addEventListener("click", async () => {
+    if (!state.editingSongId) return;
+    showError("");
+    try {
+      state.referenceStatus = await invoke("use_selected_ableton_reference", { id: state.editingSongId });
+      state.referenceTaps = [];
+      state.referenceCursorTime = null;
+      renderReferenceEditor();
+      showNotice("Linked the selected Ableton audio clip without copying it.");
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("importReferenceTrack").addEventListener("click", async () => {
+    if (!state.editingSongId) return;
+    showError("");
+    try {
+      state.referenceStatus = await invoke("import_reference_track", { id: state.editingSongId });
+      state.referenceTaps = [];
+      state.referenceCursorTime = null;
+      renderReferenceEditor();
+      showNotice("Reference audio imported into this song package.");
+    } catch (error) {
+      if (!String(error).toLowerCase().includes("cancel")) showError(error);
+    }
+  });
+
+  $("analyzeReferenceTrack").addEventListener("click", async () => {
+    if (!state.editingSongId) return;
+    const button = $("analyzeReferenceTrack");
+    button.disabled = true;
+    button.textContent = "Analyzing…";
+    showError("");
+    try {
+      const analysis = await invoke("analyze_reference_track", { id: state.editingSongId });
+      state.referenceStatus = state.referenceStatus || {};
+      state.referenceStatus.analysis = analysis;
+      renderReferenceEditor();
+      showNotice("Waveform and tempo analysis complete.");
+    } catch (error) {
+      showError(error);
+    } finally {
+      button.textContent = "Analyze";
+      button.disabled = !(state.referenceStatus && state.referenceStatus.sourceExists);
+    }
+  });
+
+  $("useDetectedAlignment").addEventListener("click", () => {
+    const analysis = state.referenceStatus && state.referenceStatus.analysis;
+    if (!analysis) return;
+    if (analysis.detectedBpm) {
+      $("referenceBpm").value = String(analysis.detectedBpm);
+      $("songBpm").value = String(analysis.detectedBpm);
+    }
+    if (Number.isFinite(Number(analysis.suggestedFirstDownbeatSeconds))) {
+      $("referenceDownbeat").value = String(Math.max(0, Number(analysis.suggestedFirstDownbeatSeconds)));
+    }
+    $("referenceMeterNum").value = $("songMeterNum").value || "4";
+    $("referenceMeterDen").value = $("songMeterDen").value || "4";
+    const duration = Number(analysis.durationSeconds || 0);
+    const first = Number($("referenceDownbeat").value || 0);
+    const secondsPerBar = referenceSecondsPerBar();
+    if (duration > first && secondsPerBar > 0) {
+      $("songLength").value = String(Math.max(1, Math.ceil((duration - first) / secondsPerBar)));
+    }
+    drawReferenceWaveform();
+  });
+
+  function sampleTimeFromDetailClip(detail) {
+    if (!detail) return null;
+    if (Number.isFinite(Number(detail.samplePositionSeconds))) {
+      return Number(detail.samplePositionSeconds);
+    }
+    const playing = Number(detail.playingPosition);
+    if (!Number.isFinite(playing)) return null;
+    if (!detail.warping) return Math.max(0, playing);
+
+    const markers = Array.isArray(detail.warpMarkers) ? detail.warpMarkers.slice() : [];
+    markers.sort((a, b) => Number(a.beatTime) - Number(b.beatTime));
+    if (markers.length < 2) return null;
+    let left = markers[0];
+    let right = markers[markers.length - 1];
+    for (let i = 0; i < markers.length - 1; i += 1) {
+      if (playing >= Number(markers[i].beatTime) && playing <= Number(markers[i + 1].beatTime)) {
+        left = markers[i];
+        right = markers[i + 1];
+        break;
+      }
+    }
+    const beatSpan = Number(right.beatTime) - Number(left.beatTime);
+    if (!(beatSpan > 0)) return null;
+    const ratio = (playing - Number(left.beatTime)) / beatSpan;
+    return Number(left.sampleTime) + ratio * (Number(right.sampleTime) - Number(left.sampleTime));
+  }
+
+  $("tapDownbeat").addEventListener("click", async () => {
+    showError("");
+    try {
+      const packet = await invoke("capture_detail_clip_position");
+      const live = (packet && packet.state) || packet || state.live || {};
+      const detail = live.detailClip || live.selectedClip || (state.live && state.live.detailClip);
+      const sampleTime = sampleTimeFromDetailClip(detail);
+      if (!Number.isFinite(sampleTime)) {
+        throw new Error("Select and play an audio clip in Ableton first. The current adapter must report its sample position.");
+      }
+      state.referenceTaps.push(sampleTime);
+      state.referenceTaps.sort((a, b) => a - b);
+      $("referenceDownbeat").value = String(state.referenceTaps[0].toFixed(3));
+
+      if (state.referenceTaps.length >= 2) {
+        const intervals = [];
+        for (let i = 1; i < state.referenceTaps.length; i += 1) {
+          const delta = state.referenceTaps[i] - state.referenceTaps[i - 1];
+          if (delta > 0.05) intervals.push(delta);
+        }
+        if (intervals.length) {
+          const average = intervals.reduce((sum, value) => sum + value, 0) / intervals.length;
+          const bpm = (60 * referenceBeatsPerBar()) / average;
+          if (Number.isFinite(bpm) && bpm >= 20 && bpm <= 999) {
+            $("referenceBpm").value = String(Math.round(bpm * 10) / 10);
+          }
+        }
+      }
+      renderReferenceEditor();
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("clearDownbeatTaps").addEventListener("click", () => {
+    state.referenceTaps = [];
+    renderReferenceEditor();
+  });
+
+  $("saveReferenceAlignment").addEventListener("click", async () => {
+    if (!state.editingSongId) return;
+    showError("");
+    try {
+      state.referenceStatus = await invoke("save_reference_alignment", {
+        id: state.editingSongId,
+        alignment: referenceAlignmentPayload()
+      });
+      $("songBpm").value = $("referenceBpm").value;
+      $("songMeterNum").value = $("referenceMeterNum").value;
+      $("songMeterDen").value = $("referenceMeterDen").value;
+      renderReferenceEditor();
+      showNotice("Reference grid saved.");
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("applyReferenceWarp").addEventListener("click", async () => {
+    if (!state.editingSongId) return;
+    const button = $("applyReferenceWarp");
+    button.disabled = true;
+    button.textContent = "Warping…";
+    showError("");
+    try {
+      state.referenceStatus = await invoke("save_reference_alignment", {
+        id: state.editingSongId,
+        alignment: referenceAlignmentPayload()
+      });
+      await invoke("apply_reference_warp", { id: state.editingSongId });
+      renderReferenceEditor();
+      showNotice("Warp markers sent to the selected Ableton clip.");
+    } catch (error) {
+      showError(error);
+    } finally {
+      button.textContent = "Warp Selected Ableton Clip";
+      button.disabled = !(state.referenceStatus && state.referenceStatus.analysis);
+    }
+  });
+
+  $("referenceWaveform").addEventListener("click", (event) => {
+    const analysis = state.referenceStatus && state.referenceStatus.analysis;
+    if (!analysis || !analysis.durationSeconds) return;
+    const rect = $("referenceWaveform").getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    state.referenceCursorTime = ratio * Number(analysis.durationSeconds);
+    const bar = referenceTimeToBar(state.referenceCursorTime);
+    $("referenceCursor").textContent = state.referenceCursorTime.toFixed(2) + " sec";
+    $("referenceCursorBar").textContent = "Bar " + bar;
+    drawReferenceWaveform();
+  });
+
+  ["referenceBpm","referenceMeterNum","referenceMeterDen","referenceDownbeat"].forEach((id) => {
+    $(id).addEventListener("input", () => {
+      if (Number.isFinite(state.referenceCursorTime)) {
+        $("referenceCursorBar").textContent = "Bar " + referenceTimeToBar(state.referenceCursorTime);
+      }
+      drawReferenceWaveform();
+    });
+  });
+  $("songSections").addEventListener("input", drawReferenceWaveform);
+  document.querySelectorAll("[data-section-name]").forEach((button) => {
+    button.addEventListener("click", () => addSectionAtCursor(button.dataset.sectionName));
+  });
+
   $("revealLibrary").addEventListener("click", async () => {
     try {
       const path = await invoke("reveal_library_root");
