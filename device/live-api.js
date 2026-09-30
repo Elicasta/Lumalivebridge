@@ -154,15 +154,41 @@ function findTrackByName(name) {
   return -1;
 }
 
+function validateTrackForBuild(index, kind, name) {
+  if (kind !== "audio" && kind !== "midi") {
+    throw new Error("unsupported track kind: " + kind);
+  }
+
+  var track = live("live_set tracks " + index);
+  if (Number(getProp(track, "is_frozen")) === 1) {
+    throw new Error('Track "' + name + '" is frozen. Unfreeze it before building the service.');
+  }
+
+  var hasAudioInput = Number(getProp(track, "has_audio_input")) === 1;
+  var hasMidiInput = Number(getProp(track, "has_midi_input")) === 1;
+  if (kind === "audio" && !hasAudioInput) {
+    throw new Error('Track "' + name + '" exists but is not an audio track.');
+  }
+  if (kind === "midi" && !hasMidiInput) {
+    throw new Error('Track "' + name + '" exists but is not a MIDI track.');
+  }
+}
+
 function ensureTrack(kind, name) {
   var existing = findTrackByName(name);
-  if (existing >= 0) return existing;
+  if (existing >= 0) {
+    validateTrackForBuild(existing, kind, name);
+    return existing;
+  }
 
   var set = live("live_set");
   var before = count("tracks");
   if (kind === "midi") set.call("create_midi_track", -1);
-  else set.call("create_audio_track", -1);
+  else if (kind === "audio") set.call("create_audio_track", -1);
+  else throw new Error("unsupported track kind: " + kind);
+
   setName("live_set tracks " + before, name);
+  validateTrackForBuild(before, kind, name);
   return before;
 }
 
