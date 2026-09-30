@@ -199,43 +199,50 @@
         </div>
       </section>
 
-      <section class="page" data-page-panel="busk">
-        <article class="panel desktop-busk-panel">
-          <div class="panel-heading busk-heading">
+      <section class="page v1-busk-page" data-page-panel="busk">
+        <div class="busk-performance-shell">
+          <header class="busk-md-bar">
             <div>
               <span class="eyebrow">SESSION VIEW</span>
-              <h2>Busk</h2>
-              <p id="desktopBuskMeta" class="muted compact-copy">Waiting for Ableton…</p>
+              <strong>Busk</strong>
+              <span id="desktopBuskMeta">Waiting for Ableton…</span>
             </div>
-            <div class="busk-actions">
-              <button id="desktopBuskSync" class="quiet">Sync</button>
-              <button id="desktopBuskClick" class="quiet">● Click</button>
-              <button id="desktopBuskPlay">▶ Play</button>
+            <div class="busk-primary-actions">
+              <button id="desktopPrevScene" class="quiet">← Scene</button>
+              <button id="desktopNextScene" class="quiet">Scene →</button>
+              <button id="desktopBuskPlay" class="primary">▶ Play</button>
               <button id="desktopBuskStop">■ Stop</button>
+              <button id="desktopBuskClick" class="quiet">● Click</button>
+              <button id="desktopTapTempo" class="quiet">Tap</button>
               <button id="desktopStopAll" class="panic">STOP ALL</button>
             </div>
-          </div>
-          <div class="busk-tool-row">
-            <button id="desktopPrevScene" class="quiet">← Scene</button>
-            <button id="desktopNextScene" class="quiet">Scene →</button>
-            <button id="desktopTapTempo" class="quiet">Tap Tempo</button>
+          </header>
+
+          <div class="busk-utility-bar">
+            <button id="desktopBuskSync" class="quiet">Refresh</button>
             <button id="desktopCaptureMidi" class="quiet">Capture MIDI</button>
             <button id="desktopSessionRecord" class="quiet">● Session Record</button>
+            <button id="desktopUndo" class="quiet">Undo</button>
+            <button id="desktopRedo" class="quiet">Redo</button>
+            <button id="desktopClearClip" class="quiet">Clear Clip</button>
+            <button id="desktopDuplicateClip" class="quiet">Duplicate</button>
+            <button id="desktopDoubleClip" class="quiet">Double Loop</button>
             <label class="busk-swing">Swing
               <input id="desktopSwing" type="range" min="0" max="1" step="0.01" value="0">
               <span id="desktopSwingValue">0%</span>
             </label>
           </div>
-          <div class="busk-tool-row secondary">
-            <button id="desktopUndo" class="quiet">Undo</button>
-            <button id="desktopRedo" class="quiet">Redo</button>
-            <button id="desktopClearClip" class="quiet">Clear Selected Clip</button>
-            <button id="desktopDuplicateClip" class="quiet">Duplicate Selected Clip</button>
-            <button id="desktopDoubleClip" class="quiet">Double Selected Clip</button>
-          </div>
-          <p class="muted">Full Session View control with scene launch, clip launch, per-track stop, clip colors, tempo details, mixer state, and selected-clip tools.</p>
-          <div id="desktopBuskGrid" class="desktop-busk-scroll"></div>
-        </article>
+
+          <div id="desktopBuskGrid" class="desktop-busk-scroll v1-busk-grid"></div>
+
+          <section class="busk-bottom-mixer">
+            <div class="v1-mixer-heading">
+              <div><span class="eyebrow">SESSION MIXER</span><strong>Tracks</strong></div>
+              <span class="muted compact-copy">Live meters · volume · mute · solo</span>
+            </div>
+            <div id="desktopBuskMixer" class="desktop-mixer v1-mixer"></div>
+          </section>
+        </div>
       </section>
 
       <section class="page" data-page-panel="songs">
@@ -396,7 +403,22 @@
             </div>
 
             <p class="hint transition-help">Each song controls what happens <strong>after it</strong>: normal gap, seamless segue, hold, vamp, or mashup overlap.</p>
-            <div id="setlistItems" class="setlist-stack"></div>
+
+            <div class="build-workspace">
+              <div class="build-workspace-heading">
+                <div>
+                  <span class="eyebrow">SERVICE TIMELINE</span>
+                  <strong>Drag songs to reorder</strong>
+                </div>
+                <span id="buildTimelineDuration" class="build-duration">0 bars</span>
+              </div>
+              <div id="buildTimeline" class="build-timeline"></div>
+            </div>
+
+            <details class="build-details" open>
+              <summary>Song + transition details</summary>
+              <div id="setlistItems" class="setlist-stack"></div>
+            </details>
 
             <div class="actions">
               <button id="deleteSetlist" class="danger-link" hidden>Delete</button>
