@@ -48,3 +48,30 @@ test("normalizes boolean track state", () => {
 test("validates plans and caps empty plans", () => {
   assert.throws(() => validatePlan({ commands: [] }), /at least one command/i);
 });
+
+
+test("accepts unified transport controls", () => {
+  assert.deepEqual(validateCommand({
+    type: "start_playback",
+    args: {}
+  }), {
+    type: "start_playback",
+    args: {}
+  });
+
+  assert.deepEqual(validateCommand({
+    type: "stop_playback",
+    args: {}
+  }), {
+    type: "stop_playback",
+    args: {}
+  });
+
+  assert.deepEqual(validateCommand({
+    type: "set_metronome",
+    args: { enabled: 1 }
+  }), {
+    type: "set_metronome",
+    args: { enabled: true }
+  });
+});

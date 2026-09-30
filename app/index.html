@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Luma Live</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">L</span>
+        <div>
+          <strong>Luma Live</strong>
+          <span>Church Show Control</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-page="live">
+          <span>Song Control</span><small>Arrangement performance</small>
+        </button>
+        <button class="nav-item" data-page="busk">
+          <span>Busk</span><small>Session View tools</small>
+        </button>
+        <button class="nav-item" data-page="songs">
+          <span>Library</span><small>Reusable songs</small>
+        </button>
+        <button class="nav-item" data-page="setlists">
+          <span>Setlists</span><small>Build services</small>
+        </button>
+        <button class="nav-item" data-page="settings">
+          <span>Settings</span><small>Local system</small>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-line">
+          <span class="dot ready"></span>
+          <div><strong>Local Mode</strong><small>Internet not required</small></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <span class="eyebrow" id="pageEyebrow">LIVE</span>
+          <h1 id="pageTitle">Song Control</h1>
+        </div>
+        <div class="top-status">
+          <div class="connection-pill"><span class="dot" id="bridgeDot"></span><span id="bridgeStatus">Ableton offline</span></div>
+          <div class="connection-pill"><span class="dot" id="serverDot"></span><span id="serverStatus">Starting remote</span></div>
+        </div>
+      </header>
+
+      <div id="error" class="error" hidden></div>
+      <div id="notice" class="notice" hidden></div>
+
+      <section class="page active" data-page-panel="live">
+        <div class="desktop-transport">
+          <button id="desktopPlay" class="transport-action">▶ <span id="desktopPlayLabel">Play</span></button>
+          <button id="desktopStop" class="transport-action">■ Stop</button>
+          <button id="desktopClick" class="transport-action">● Click</button>
+          <div class="transport-metrics">
+            <div><span class="eyebrow">BPM</span><strong id="desktopTempo">--</strong></div>
+            <div><span class="eyebrow">BAR</span><strong id="desktopBar">--</strong></div>
+            <div><span class="eyebrow">METER</span><strong id="desktopMeter">--</strong></div>
+          </div>
+        </div>
+
+        <div class="live-grid">
+          <article class="panel live-song-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="eyebrow">CURRENT SONG</span>
+                <h2 id="desktopCurrentSong">No service loaded</h2>
+                <p id="desktopCurrentMeta" class="muted compact-copy">Load a setlist to begin.</p>
+              </div>
+              <div class="song-nav">
+                <button id="desktopPrevSong" class="quiet">← Song</button>
+                <button id="desktopNextSong" class="quiet">Song →</button>
+              </div>
+            </div>
+
+            <div class="desktop-progress"><div id="desktopProgress"></div></div>
+
+            <div class="desktop-now-next">
+              <div><span class="eyebrow">NOW</span><strong id="desktopCurrentSection">—</strong></div>
+              <div><span class="eyebrow">NEXT</span><strong id="desktopNextSection">—</strong></div>
+            </div>
+
+            <div class="section-step-row">
+              <button id="desktopPrevSection">← Previous Section</button>
+              <button id="desktopNextSectionBtn" class="primary">Next Section →</button>
+            </div>
+            <div id="desktopSectionGrid" class="desktop-section-grid"></div>
+          </article>
+
+          <article class="panel service-panel">
+            <div class="panel-heading">
+              <div><span class="eyebrow">SERVICE</span><h3 id="desktopServiceTitle">No setlist loaded</h3></div>
+              <span id="desktopServiceCount" class="counter">0</span>
+            </div>
+            <div id="desktopServiceOrder" class="rows"></div>
+          </article>
+        </div>
+
+        <article class="panel desktop-mixer-panel">
+          <div class="panel-heading">
+            <div><span class="eyebrow">TRACK CONTROL</span><h3>Arrangement Mixer</h3></div>
+            <span class="muted compact-copy">Volume · mute · solo</span>
+          </div>
+          <div id="desktopMixer" class="desktop-mixer"></div>
+        </article>
+
+        <article class="panel plain-language-panel">
+          <div class="panel-heading">
+            <div><span class="eyebrow">PLAIN LANGUAGE</span><h3>Tell Luma Live what to do</h3></div>
+          </div>
+          <div class="plain-command-row">
+            <input id="plainCommand" placeholder="Next section, mute BGV, load Sunday AM, set tempo to 72…">
+            <button id="plainPreview" class="primary">Preview</button>
+            <button id="plainRun" class="quiet">Run Now</button>
+          </div>
+          <div id="plainPreviewPanel" class="command-preview" hidden>
+            <div>
+              <span class="eyebrow">PREVIEW</span>
+              <strong id="plainPreviewSummary">—</strong>
+              <small id="plainPreviewMeta"></small>
+            </div>
+            <div class="command-preview-actions">
+              <button id="plainCancel" class="quiet">Cancel</button>
+              <button id="plainApply" class="primary">Apply</button>
+            </div>
+          </div>
+          <div class="plain-examples">
+            <button data-plain="next section">Next section</button>
+            <button data-plain="next song">Next song</button>
+            <button data-plain="click on">Click on</button>
+            <button data-plain="mute guide">Mute Guide</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="page" data-page-panel="busk">
+        <article class="panel desktop-busk-panel">
+          <div class="panel-heading busk-heading">
+            <div>
+              <span class="eyebrow">SESSION VIEW</span>
+              <h2>Busk</h2>
+              <p id="desktopBuskMeta" class="muted compact-copy">Waiting for Ableton…</p>
+            </div>
+            <div class="busk-actions">
+              <button id="desktopBuskSync" class="quiet">Sync</button>
+              <button id="desktopBuskClick" class="quiet">● Click</button>
+              <button id="desktopBuskPlay">▶ Play</button>
+              <button id="desktopBuskStop">■ Stop</button>
+              <button id="desktopStopAll" class="panic">STOP ALL</button>
+            </div>
+          </div>
+          <div class="busk-tool-row">
+            <button id="desktopPrevScene" class="quiet">← Scene</button>
+            <button id="desktopNextScene" class="quiet">Scene →</button>
+            <button id="desktopTapTempo" class="quiet">Tap Tempo</button>
+            <button id="desktopCaptureMidi" class="quiet">Capture MIDI</button>
+            <button id="desktopSessionRecord" class="quiet">● Session Record</button>
+            <label class="busk-swing">Swing
+              <input id="desktopSwing" type="range" min="0" max="1" step="0.01" value="0">
+              <span id="desktopSwingValue">0%</span>
+            </label>
+          </div>
+          <div class="busk-tool-row secondary">
+            <button id="desktopUndo" class="quiet">Undo</button>
+            <button id="desktopRedo" class="quiet">Redo</button>
+            <button id="desktopClearClip" class="quiet">Clear Selected Clip</button>
+            <button id="desktopDuplicateClip" class="quiet">Duplicate Selected Clip</button>
+            <button id="desktopDoubleClip" class="quiet">Double Selected Clip</button>
+          </div>
+          <p class="muted">Full Session View control with scene launch, clip launch, per-track stop, clip colors, tempo details, mixer state, and selected-clip tools.</p>
+          <div id="desktopBuskGrid" class="desktop-busk-scroll"></div>
+        </article>
+      </section>
+
+      <section class="page" data-page-panel="songs">
+        <div class="split">
+          <article class="panel editor-panel">
+            <div class="panel-heading">
+              <div><span class="eyebrow">EDITOR</span><h2 id="songEditorTitle">New Song</h2></div>
+              <button id="newSong" class="quiet">New</button>
+            </div>
+
+            <div class="form-grid">
+              <label>Title<input id="songTitle" placeholder="Goodness of God"></label>
+              <label>Artist<input id="songArtist" placeholder="Bethel Music"></label>
+              <label>BPM<input id="songBpm" type="number" min="20" max="999" value="120"></label>
+              <label>Key<input id="songKey" placeholder="Ab"></label>
+              <label>Meter
+                <div class="meter-fields"><input id="songMeterNum" type="number" value="4" min="1" max="32"><span>/</span><input id="songMeterDen" type="number" value="4" min="1" max="16"></div>
+              </label>
+              <label>Length in bars<input id="songLength" type="number" min="1" value="64"></label>
+            </div>
+
+            <label>Sections
+              <textarea id="songSections" rows="10" placeholder="Intro @ 1&#10;Verse 1 @ 9&#10;Chorus @ 25&#10;Bridge @ 57&#10;Vamp @ 81"></textarea>
+            </label>
+            <p class="hint">One section per line using <code>Name @ bar</code>. These stay with the song every time you use it.</p>
+
+            <div class="song-package-card">
+              <div class="panel-heading compact-heading">
+                <div><span class="eyebrow">SONG FILES</span><h3>Portable Song Package</h3></div>
+                <span id="songPackageBadge" class="package-badge">NEW</span>
+              </div>
+              <div class="package-grid">
+                <div><span>Folder</span><code id="songPackagePath">Save the song first</code></div>
+                <div><span>Ableton Project</span><strong id="songProjectStatus">Not attached</strong></div>
+                <div><span>Original stems</span><strong id="songStemStatus">0</strong></div>
+                <div><span>Cue files</span><strong id="songCueStatus">0</strong></div>
+              </div>
+              <p id="songPackageWarning" class="hint package-warning">Save the song, then attach its Ableton Project and original stems here.</p>
+              <div class="song-file-guide">
+                <div><span>ABLETON SONG</span><strong>Save normally as an Ableton Project folder containing the .als file, then click Attach Ableton Project.</strong></div>
+                <div><span>ORIGINAL STEMS</span><strong>WAV, preferably 24-bit / 48 kHz. Export every stem from the same 1.1.1 start and the same full-song length, then click Import Stems.</strong></div>
+              </div>
+              <div class="package-actions">
+                <button id="openSongFolder" class="quiet" disabled>Open Folder</button>
+                <button id="attachSongProject" class="quiet" disabled>Attach Ableton Project</button>
+                <button id="importSongStems" class="quiet" disabled>Import Stems</button>
+                <button id="rescanSongPackage" class="quiet" disabled>Rescan</button>
+              </div>
+            </div>
+
+            <div class="track-editor-card">
+              <div class="panel-heading compact-heading">
+                <div>
+                  <span class="eyebrow">TRACK EDITOR</span>
+                  <h3>Waveform · Grid · Sections</h3>
+                </div>
+                <span id="referenceBadge" class="package-badge">NO TRACK</span>
+              </div>
+
+              <div class="reference-source-row">
+                <div>
+                  <span class="eyebrow">REFERENCE AUDIO</span>
+                  <code id="referenceSourcePath">Select an Ableton audio clip or import a track.</code>
+                </div>
+                <div class="package-actions">
+                  <button id="useAbletonReference" class="quiet" disabled>Use Selected Ableton Clip</button>
+                  <button id="importReferenceTrack" class="quiet" disabled>Import Audio</button>
+                  <button id="analyzeReferenceTrack" class="quiet" disabled>Analyze</button>
+                </div>
+              </div>
+
+              <div id="referenceWaveformWrap" class="reference-waveform-wrap">
+                <canvas id="referenceWaveform" width="1400" height="260"></canvas>
+                <div id="referenceWaveformEmpty" class="reference-waveform-empty">Attach a reference track, then Analyze.</div>
+              </div>
+
+              <div class="reference-metrics">
+                <label>BPM
+                  <input id="referenceBpm" type="number" min="20" max="999" step="0.1" value="120">
+                </label>
+                <label>Meter
+                  <div class="meter-fields">
+                    <input id="referenceMeterNum" type="number" min="1" max="32" value="4">
+                    <span>/</span>
+                    <input id="referenceMeterDen" type="number" min="1" max="32" value="4">
+                  </div>
+                </label>
+                <label>First downbeat (sec)
+                  <input id="referenceDownbeat" type="number" min="0" step="0.001" value="0">
+                </label>
+                <div class="reference-readout">
+                  <span class="eyebrow">CURSOR</span>
+                  <strong id="referenceCursor">—</strong>
+                </div>
+              </div>
+
+              <div class="reference-actions">
+                <button id="useDetectedAlignment" class="quiet" disabled>Use Detected</button>
+                <button id="tapDownbeat" class="quiet" disabled>Tap 1</button>
+                <button id="clearDownbeatTaps" class="quiet" disabled>Clear Taps</button>
+                <button id="saveReferenceAlignment" class="quiet" disabled>Save Grid</button>
+                <button id="applyReferenceWarp" class="primary" disabled>Warp Selected Ableton Clip</button>
+              </div>
+              <p id="referenceStatusText" class="hint">For a messy rehearsal track: play the selected clip in Ableton and tap <strong>Tap 1</strong> on successive measure downbeats. Luma turns those taps into warp anchors.</p>
+
+              <div class="section-marker-tools">
+                <div>
+                  <span class="eyebrow">ADD SECTION AT CURSOR</span>
+                  <strong id="referenceCursorBar">Click the waveform to choose a bar.</strong>
+                </div>
+                <div class="section-marker-buttons">
+                  <button data-section-name="Intro" class="quiet">Intro</button>
+                  <button data-section-name="Verse" class="quiet">Verse</button>
+                  <button data-section-name="Pre-Chorus" class="quiet">Pre</button>
+                  <button data-section-name="Chorus" class="quiet">Chorus</button>
+                  <button data-section-name="Bridge" class="quiet">Bridge</button>
+                  <button data-section-name="Vamp" class="quiet">Vamp</button>
+                  <button data-section-name="Outro" class="quiet">Outro</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button id="deleteSong" class="danger-link" hidden>Delete</button>
+              <div class="action-cluster">
+                <button id="saveSongCopy" class="quiet" hidden>Save as New</button>
+                <button id="saveSong" class="primary">Create Song</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel list-panel">
+            <div class="panel-heading">
+              <div><span class="eyebrow">LIBRARY</span><h3>Saved Songs</h3></div>
+              <span id="songCount" class="counter">0</span>
+            </div>
+            <div id="songList" class="rows"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="page" data-page-panel="setlists">
+        <div class="split">
+          <article class="panel editor-panel">
+            <div class="panel-heading">
+              <div><span class="eyebrow">SERVICE BUILDER</span><h2 id="setlistEditorTitle">New Setlist</h2></div>
+              <button id="newSetlist" class="quiet">New</button>
+            </div>
+
+            <div class="form-grid compact">
+              <label>Service name<input id="setlistTitle" placeholder="Sunday AM"></label>
+              <label>Gap between songs<input id="setlistGap" type="number" min="0" max="64" value="4"></label>
+            </div>
+
+            <div class="add-row">
+              <select id="songPicker"></select>
+              <button id="addSong">Add Song</button>
+            </div>
+
+            <p class="hint transition-help">Each song controls what happens <strong>after it</strong>: normal gap, seamless segue, hold, vamp, or mashup overlap.</p>
+            <div id="setlistItems" class="setlist-stack"></div>
+
+            <div class="actions">
+              <button id="deleteSetlist" class="danger-link" hidden>Delete</button>
+              <div class="action-cluster">
+                <button id="syncSetlist" class="quiet" disabled>Sync Locators</button>
+                <button id="saveSetlist" class="quiet">Save Setlist</button>
+                <button id="buildService" class="primary">Build Service + Ableton</button>
+              </div>
+            </div>
+            <div id="buildResultPanel" class="build-result-panel" hidden>
+              <div>
+                <span class="eyebrow">LAST BUILD</span>
+                <strong id="buildResultSummary">—</strong>
+                <code id="buildResultPath"></code>
+              </div>
+              <button id="openBuildFolder" class="quiet">Open Build Folder</button>
+            </div>
+          </article>
+
+          <article class="panel list-panel">
+            <div class="panel-heading">
+              <div><span class="eyebrow">SERVICES</span><h3>Saved Setlists</h3></div>
+              <span id="setlistCount" class="counter">0</span>
+            </div>
+            <div id="setlistList" class="rows"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="page" data-page-panel="settings">
+        <div class="settings-grid">
+          <article class="panel">
+            <span class="eyebrow">LOCAL DATABASE</span>
+            <h3>Offline Library</h3>
+            <p class="muted">Songs and setlists live in one SQLite database. Max no longer owns a second song library.</p>
+            <div class="detail"><span>Database</span><code id="databasePath">Loading…</code></div>
+          </article>
+
+          <article class="panel">
+            <span class="eyebrow">MEDIA LIBRARY</span>
+            <h3>Song Packages</h3>
+            <p class="muted">Each song gets its own portable folder with its Ableton authoring set, stems, cues, and manifest. Service builds are collected snapshots.</p>
+            <div class="detail"><span>Root</span><code id="libraryRoot">Loading…</code></div>
+            <button id="revealLibrary" class="quiet library-button">Open Library Folder</button>
+          </article>
+
+          <article class="panel pairing-settings">
+            <span class="eyebrow">IPAD PAIRING</span>
+            <h3>6-Digit Connection Code</h3>
+            <p class="muted">Open the Luma Live address on the iPad, then enter this code. The code is never used as the permanent device credential.</p>
+            <div class="desktop-pairing-code" id="desktopPairingCode">------</div>
+            <button id="newPairingCode" class="quiet">New Code</button>
+          </article>
+
+          <article class="panel">
+            <span class="eyebrow">IPAD REMOTE</span>
+            <h3>Local Network</h3>
+            <p class="muted">Open this address on the iPad. No tokenized URL is needed after v0.4.2.</p>
+            <div id="remoteLinks" class="remote-links"></div>
+          </article>
+
+          <article class="panel">
+            <span class="eyebrow">ABLETON ADAPTER</span>
+            <h3>Localhost Only</h3>
+            <p class="muted">Luma Live.amxd talks only to this Mac at <code>127.0.0.1:17878</code>. It does not host another iPad website.</p>
+          </article>
+
+          <article class="panel">
+            <span class="eyebrow">SYSTEM CHECK</span>
+            <h3>Hard Test This Mac</h3>
+            <p class="muted">Checks the local library, write access, service template, every song package, and the Ableton adapter connection.</p>
+            <button id="runSystemCheck" class="primary library-button">Run Full Check</button>
+            <div id="systemCheckResults" class="system-check-results"></div>
+          </article>
+
+          <article class="panel">
+            <span class="eyebrow">INTERNET</span>
+            <h3>Optional</h3>
+            <p class="muted">Core show preparation and live control remain local-first. Internet is not required for the library or same-network remote.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="./app.js"></script>
+</body>
+</html>

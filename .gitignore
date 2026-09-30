@@ -4,3 +4,5 @@ node_modules/
 *.als
 *.asd
 coverage/
+src-tauri/target/
+src-tauri/gen/

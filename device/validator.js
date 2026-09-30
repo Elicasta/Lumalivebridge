@@ -121,11 +121,21 @@ function validateCommand(input, options = {}) {
       break;
     }
 
+    case "start_playback":
+    case "stop_playback":
+      normalized = {};
+      break;
+
+    case "set_metronome":
+      normalized = { enabled: bool(args.enabled, "set_metronome.enabled") };
+      break;
+
     case "fire_scene":
       normalized = { scene: target(args.scene, "fire_scene.scene") };
       break;
 
     case "stop_all_clips":
+    case "refresh_session":
       normalized = {};
       break;
 
@@ -188,6 +198,130 @@ function validateCommand(input, options = {}) {
         value: bool(args.value, "set_track_solo.value")
       };
       break;
+
+    case "sync_cue_points": {
+      if (!Array.isArray(args.points)) throw new Error("sync_cue_points.points must be an array");
+      if (args.points.length > 250) throw new Error("sync_cue_points.points is too large");
+      normalized = {
+        replace: args.replace == null ? true : bool(args.replace, "sync_cue_points.replace"),
+        points: args.points.map((point, index) => {
+          if (!isObject(point)) throw new Error("cue point " + index + " must be an object");
+          const time = finiteNumber(point.time, "cue point time");
+          if (time < 0 || time > 10000000) throw new Error("cue point time is out of range");
+          const name = cleanName(point.name, "cue point name");
+          if (!name.startsWith("LL|")) throw new Error("Luma cue point names must begin with LL|");
+          return { time, name };
+        })
+      };
+      break;
+    }
+
+    case "jump_to_time": {
+      const time = finiteNumber(args.time, "jump_to_time.time");
+      if (time < 0 || time > 10000000) throw new Error("jump time is out of range");
+      normalized = { time };
+      break;
+    }
+
+    case "queue_jump_to_time": {
+      const time = finiteNumber(args.time, "queue_jump_to_time.time");
+      const origin = finiteNumber(args.origin, "queue_jump_to_time.origin");
+      const beatsPerBar = finiteNumber(args.beatsPerBar, "queue_jump_to_time.beatsPerBar");
+      if (time < 0 || origin < 0 || beatsPerBar <= 0 || beatsPerBar > 128) {
+        throw new Error("quantized jump range is invalid");
+      }
+      normalized = { time, origin, beatsPerBar };
+      break;
+    }
+
+    case "ensure_track": {
+      const kind = args.kind === "midi" ? "midi" : args.kind === "audio" ? "audio" : null;
+      if (!kind) throw new Error("ensure_track.kind must be midi or audio");
+      normalized = {
+        kind,
+        name: cleanName(args.name, "ensure_track.name")
+      };
+      break;
+    }
+
+    case "begin_bulk_update":
+    case "end_bulk_update":
+    case "clear_luma_arrangement":
+      normalized = {};
+      break;
+
+    case "create_arrangement_audio_clip": {
+      const position = finiteNumber(args.position, "create_arrangement_audio_clip.position");
+      if (position < 0 || position > 1576800) throw new Error("Arrangement clip position is out of range");
+      normalized = {
+        track: target(args.track, "create_arrangement_audio_clip.track"),
+        filePath: cleanName(args.filePath, "create_arrangement_audio_clip.filePath"),
+        position,
+        name: cleanName(args.name, "create_arrangement_audio_clip.name"),
+        transposeSemitones: args.transposeSemitones == null
+          ? 0
+          : integer(args.transposeSemitones, "create_arrangement_audio_clip.transposeSemitones")
+      };
+      if (normalized.transposeSemitones < -12 || normalized.transposeSemitones > 12) {
+        throw new Error("Arrangement clip transpose must be between -12 and +12 semitones");
+      }
+      break;
+    }
+
+    case "create_arrangement_midi_clip": {
+      const position = finiteNumber(args.position, "create_arrangement_midi_clip.position");
+      const lengthBeats = finiteNumber(args.lengthBeats, "create_arrangement_midi_clip.lengthBeats");
+      if (position < 0 || position > 1576800) throw new Error("Arrangement MIDI clip position is out of range");
+      if (lengthBeats <= 0 || lengthBeats > 65536) throw new Error("Arrangement MIDI clip length is out of range");
+      normalized = {
+        track: target(args.track, "create_arrangement_midi_clip.track"),
+        position,
+        lengthBeats,
+        name: cleanName(args.name, "create_arrangement_midi_clip.name")
+      };
+      break;
+    }
+
+    case "configure_service_timeline": {
+      if (!Array.isArray(args.songs)) throw new Error("configure_service_timeline.songs must be an array");
+      if (!Array.isArray(args.transitions)) throw new Error("configure_service_timeline.transitions must be an array");
+      if (args.songs.length > 100 || args.transitions.length > 100) throw new Error("service timeline is too large");
+      normalized = {
+        songs: args.songs.map((song, index) => {
+          if (!isObject(song)) throw new Error("timeline song " + index + " must be an object");
+          return {
+            instanceId: cleanName(song.instanceId, "timeline song instanceId"),
+            startBeat: finiteNumber(song.startBeat, "timeline song startBeat"),
+            endBeat: finiteNumber(song.endBeat, "timeline song endBeat"),
+            bpm: finiteNumber(song.bpm, "timeline song bpm"),
+            numerator: integer(song.numerator, "timeline song numerator"),
+            denominator: integer(song.denominator, "timeline song denominator")
+          };
+        }),
+        transitions: args.transitions.map((transition, index) => {
+          if (!isObject(transition)) throw new Error("timeline transition " + index + " must be an object");
+          return {
+            fromInstanceId: cleanName(transition.fromInstanceId, "timeline transition fromInstanceId"),
+            toInstanceId: transition.toInstanceId == null ? null : cleanName(transition.toInstanceId, "timeline transition toInstanceId"),
+            mode: cleanName(transition.mode, "timeline transition mode"),
+            triggerBeat: finiteNumber(transition.triggerBeat, "timeline transition triggerBeat"),
+            nextStartBeat: transition.nextStartBeat == null ? null : finiteNumber(transition.nextStartBeat, "timeline transition nextStartBeat"),
+            vampStartBeat: transition.vampStartBeat == null ? null : finiteNumber(transition.vampStartBeat, "timeline transition vampStartBeat"),
+            vampEndBeat: transition.vampEndBeat == null ? null : finiteNumber(transition.vampEndBeat, "timeline transition vampEndBeat")
+          };
+        })
+      };
+      break;
+    }
+
+    case "set_arrangement_loop": {
+      const enabled = bool(args.enabled, "set_arrangement_loop.enabled");
+      const start = finiteNumber(args.start == null ? 0 : args.start, "set_arrangement_loop.start");
+      const length = finiteNumber(args.length == null ? 1 : args.length, "set_arrangement_loop.length");
+      if (start < 0 || length <= 0) throw new Error("Arrangement loop range is invalid");
+      normalized = { enabled, start, length };
+      break;
+    }
 
     default:
       throw new Error("unsupported command");
