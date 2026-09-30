@@ -2148,6 +2148,11 @@ body[data-page="setlists"] .transition-setlist-item {
   background: #10273c;
   color: #8fcdf2;
 }
+.md-ready-state.warning {
+  border-color: #7d5f2d;
+  background: #2c2111;
+  color: #f0c66d;
+}
 .md-ready-state.ready {
   border-color: #286653;
   background: #0f2b24;
